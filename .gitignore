@@ -1,0 +1,8 @@
+results/
+Gunshot/
+Rumble/
+Predictions/
+Spectrograms/
+temp.py
+profile.json
+__pycache__/
