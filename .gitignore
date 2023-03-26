@@ -6,3 +6,6 @@ Spectrograms/
 temp.py
 profile.json
 __pycache__/
+.ipynb_checkpoints/README-checkpoint.md
+.ipynb_checkpoints/requirements-checkpoint.txt
+.ipynb_checkpoints/setup-checkpoint.py
