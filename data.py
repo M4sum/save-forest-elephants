@@ -1,15 +1,16 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-import aifc
+# import aifc
 from scipy import signal
 from torch.utils import data
-from torchvision import transforms
+# from torchvision import transforms
 import os
-from torch.utils.data.sampler import SubsetRandomSampler
-from sklearn.preprocessing import StandardScaler, MinMaxScaler
+# from torch.utils.data.sampler import SubsetRandomSampler
+# from sklearn.preprocessing import StandardScaler, MinMaxScaler
 import glob
 import parameters
+from torch.utils.data import Dataset, DataLoader
 
 from utils import set_seed
 
@@ -575,6 +576,37 @@ class ElephantDataset(data.Dataset):
         # elif self.preprocess == "FeatureNorm":
         #     self.features = (self.features - np.mean(self.features, axis=(0, 1))) / np.std(self.features, axis=(0,1))
 
+class SpectrogramDataset(Dataset):
+    def __init__(self, spectrogram_files, chunk_size):
+        self.spectrogram_files = spectrogram_files
+        self.chunk_size = chunk_size
+        self.num_chunks = sum([(np.load(f)['spectrogram'].shape[-1] - chunk_size) + 1 
+                               for f in spectrogram_files])
+
+    def __len__(self):
+        return self.num_chunks
+
+    def __getitem__(self, idx):
+        file_idx = 0
+        while idx >= (np.load(self.spectrogram_files[file_idx])['spectrogram'].shape[-1] - self.chunk_size) + 1:
+            idx -= (np.load(self.spectrogram_files[file_idx])['spectrogram'].shape[-1] - self.chunk_size) + 1
+            file_idx += 1
+
+        start = idx
+        end = idx + self.chunk_size
+        spectrogram = np.load(self.spectrogram_files[file_idx])['spectrogram']
+        chunk = spectrogram[:, start:end]
+        return chunk, file_idx, idx
+
+spectrogram_dir = '/path/to/spectrogram/files'  # directory containing spectrogram files
+chunk_size = 256  # example chunk size
+
+spectrogram_files = [os.path.join(spectrogram_dir, f) for f in os.listdir(spectrogram_dir) 
+                     if f.endswith('.npy')]
+
+dataset = SpectrogramDataset(spectrogram_files, chunk_size)
+dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
+
 
 
 
@@ -666,5 +698,3 @@ class ElephantDatasetFull(data.Dataset):
             return spectrogram, None, gt_call_path
         else:   
             return spectrogram, label, gt_call_path
-
-

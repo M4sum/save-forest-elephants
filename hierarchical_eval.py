@@ -16,8 +16,10 @@ import math
 import csv
 import time
 from tqdm import tqdm
+import multiprocessing as mp
 from multiprocessing import Pool, cpu_count
 import pdb
+from concurrent.futures import as_completed
 
 import parameters
 from data import get_loader, ElephantDatasetFull
@@ -256,14 +258,19 @@ def multi_class_predict_spec_sliding_window(spectrogram, model, chunk_size=256, 
 
 def process_slice(spect_slice, model, 
                   hierarchical_model, hierarchy_threshold, 
-                  chunk_size, predictions, hierarchical_predictions, overlap_counts):
+                  spect_idx, last_chunk_flag,
+                  predictions):
+    
     # Transform the slice - this is definitely sketchy!!!! 
     spect_slice = (spect_slice - np.mean(spect_slice)) / np.std(spect_slice)
     spect_slice = torch.from_numpy(spect_slice).float()
     spect_slice = spect_slice.to(parameters.device)
 
     outputs = model(spect_slice) # Shape - (1, chunk_size, 1)
-    compressed_out = outputs.view(-1, 1).squeeze()
+    if last_chunk_flag:
+        compressed_out = outputs.view(-1, 1).squeeze()[:predictions[spect_idx: ].shape[0]]
+    else:
+        compressed_out = outputs.view(-1, 1).squeeze()
 
     # Now check if we are running the hierarchical model
     if hierarchical_model is not None:
@@ -272,20 +279,19 @@ def process_slice(spect_slice, model,
                                    torch.tensor(1.0).to(parameters.device), 
                                    torch.tensor(0.0).to(parameters.device))
         pred_counts = torch.sum(binary_preds)
-        # Check if we need to run the second model
         hierarchical_compressed_out = compressed_out
+
+        # Check if we need to run the second model
         if pred_counts.item() >= hierarchy_threshold:
             hierarchical_outputs = hierarchical_model(spect_slice)
-            hierarchical_compressed_out = hierarchical_outputs.view(-1, 1).squeeze()
+            if last_chunk_flag:
+                hierarchical_compressed_out = hierarchical_outputs.view(-1, 1).squeeze()[:predictions[spect_idx: ].shape[0]]
+            else:
+                hierarchical_compressed_out = hierarchical_outputs.view(-1, 1).squeeze()
 
-        # Save the hierarchical model's output
-        hierarchical_predictions[spect_idx: spect_idx + chunk_size] += hierarchical_compressed_out.cpu().detach().numpy()
-
-    overlap_counts[spect_idx: spect_idx + chunk_size] += 1
-    # Save the model_0's output!
-    predictions[spect_idx: spect_idx + chunk_size] += compressed_out.cpu().detach().numpy()
+        return compressed_out.cpu().detach().numpy(), hierarchical_compressed_out.cpu().detach().numpy(), spect_idx
     
-    return predictions, hierarchical_predictions, overlap_counts
+    return compressed_out.cpu().detach().numpy(), spect_idx
 
 def predict_spec_sliding_window(spectrogram, model, chunk_size=256, jump=128, hierarchical_model=None, hierarchy_threshold=15):
     """
@@ -302,13 +308,14 @@ def predict_spec_sliding_window(spectrogram, model, chunk_size=256, jump=128, hi
     """
     # Get the number of frames in the full audio clip
     predictions = np.zeros(spectrogram.shape[0])
+
     if hierarchical_model is not None:
         hierarchical_predictions = np.zeros(spectrogram.shape[0])
 
     # Keeps track of the number of predictions made for a given
     # slice for final averaging!
     overlap_counts = np.zeros(spectrogram.shape[0])
-    
+    processes = []
 
     # This is a bit janky but we will manually transform
     # each spectrogram chunk
@@ -322,141 +329,46 @@ def predict_spec_sliding_window(spectrogram, model, chunk_size=256, jump=128, hi
     # For the sliding window we slide the window by one spectrogram
     # frame, determined by the hop size.
     print(f"Number of cpus: {cpu_count()}")
-    pool = Pool(cpu_count()) # create a pool with the number of available cores
-    results = []
-    
-    pbar1 = tqdm(total = spectrogram.shape[1]+1)
+
+    # create a pool with the number of available cores
+    pool = Pool(cpu_count())
+
     start = time.time()
+
     # divide the spectrogram into equal parts, each part will be processed in a separate process
     for spect_idx in range(0, spectrogram.shape[1], jump):
         spect_slice = spectrogram[:, spect_idx:spect_idx + chunk_size, :]
-        results.append(pool.apply_async(process_slice, args=(spect_slice, model, 
+        # pdb.set_trace()
+        last_chunk_flag = False
+        if (spect_idx - jump + chunk_size != spectrogram.shape[1]):
+            last_chunk_flag = True
+        processes.append(pool.apply_async(process_slice, args=(spect_slice, model, 
                                                              hierarchical_model, hierarchy_threshold, 
-                                                             chunk_size, predictions, hierarchical_predictions, overlap_counts)))
-        pbar1.update(jump)
-    pbar1.close()
+                                                             spect_idx, last_chunk_flag,
+                                                             predictions)))
     
-    # wait for all processes to finish
-    pbar2 = tqdm(total = len(results))
-    pdb.set_trace()
-    for r in results:
-        r.wait()
+    
+    pbar2 = tqdm(total = len(processes))
+    # pdb.set_trace()
+    # wait for all processes to finish and collect compressed outputs
+    for process in processes:
+
+        if hierarchical_model is not None:
+            c_out, hi_c_out, spect_idx = process.get()
+            hierarchical_predictions[spect_idx: spect_idx + chunk_size] += hi_c_out
+        
+        else:
+            c_out, spect_idx = process.get()
+
+        predictions[spect_idx: spect_idx + chunk_size] += c_out
+        overlap_counts[spect_idx: spect_idx + chunk_size] += 1
+
         pbar2.update(1)
+
     pbar2.close()
-    end = time.time()
-    print("total time taken this loop: ", end - start)
     pool.close()
     pool.join()
     
-def predict_spec_sliding_window_(spectrogram, model, chunk_size=256, jump=128, hierarchical_model=None, hierarchy_threshold=15):
-    """
-        Generate the prediction sequence for a full audio sequence
-        using a sliding window. Slide the window by one spectrogram frame
-        and pass each window through the given model. Compute the average
-        over overlapping window predictions to get the final prediction.
-        Allow for having a hierarchical model! If using a hierarchical model
-        also save the model_0 predictions!
-
-        Return:
-        With Hierarchical Model - hierarchical predictions, model_0 predictions
-        Solo Model - predictions
-    """
-    # Get the number of frames in the full audio clip
-    predictions = np.zeros(spectrogram.shape[0])
-    if hierarchical_model is not None:
-        hierarchical_predictions = np.zeros(spectrogram.shape[0])
-
-    # Keeps track of the number of predictions made for a given
-    # slice for final averaging!
-    overlap_counts = np.zeros(spectrogram.shape[0])
-    
-
-    # This is a bit janky but we will manually transform
-    # each spectrogram chunk
-    #spectrogram = torch.from_numpy(spectrogram).float()
-    # Add a batch dim for the model!
-    #spectrogram = torch.unsqueeze(spectrogram, 0) # Shape - (1, time, freq)
-
-    # Added!
-    spectrogram = np.expand_dims(spectrogram,axis=0)
-
-    # For the sliding window we slide the window by one spectrogram
-    # frame, determined by the hop size.
-    spect_idx = 0 # The frame idx of the beginning of the current window
-    i = 0
-    # How can I parallelize this shit?????? 
-    start = time.time()
-    pbar = tqdm(total = spectrogram.shape[1]+1)
-    while  spect_idx + chunk_size <= spectrogram.shape[1]:
-        spect_slice = spectrogram[:, spect_idx: spect_idx + chunk_size, :]
-        # Transform the slice - this is definitely sketchy!!!! 
-        spect_slice = (spect_slice - np.mean(spect_slice)) / np.std(spect_slice)
-        spect_slice = torch.from_numpy(spect_slice).float()
-        spect_slice = spect_slice.to(parameters.device)
-
-        outputs = model(spect_slice) # Shape - (1, chunk_size, 1)
-        compressed_out = outputs.view(-1, 1).squeeze()
-
-        # Now check if we are running the hierarchical model
-        if hierarchical_model is not None:
-            chunk_preds = torch.sigmoid(compressed_out)
-            binary_preds = torch.where(chunk_preds > parameters.THRESHOLD, torch.tensor(1.0).to(parameters.device), torch.tensor(0.0).to(parameters.device))
-            pred_counts = torch.sum(binary_preds)
-            # Check if we need to run the second model
-            hierarchical_compressed_out = compressed_out
-            if pred_counts.item() >= hierarchy_threshold:
-                hierarchical_outputs = hierarchical_model(spect_slice)
-                hierarchical_compressed_out = hierarchical_outputs.view(-1, 1).squeeze()
-
-            # Save the hierarchical model's output
-            hierarchical_predictions[spect_idx: spect_idx + chunk_size] += hierarchical_compressed_out.cpu().detach().numpy()
-
-        overlap_counts[spect_idx: spect_idx + chunk_size] += 1
-        # Save the model_0's output!
-        predictions[spect_idx: spect_idx + chunk_size] += compressed_out.cpu().detach().numpy()
-
-        spect_idx += jump
-        i += 1
-        pbar.update(1)
-    pbar.close()
-    end = time.time()
-    print("total time taken this loop: ", end - start)
-    with open("time_taken.txt", "w") as text_file:
-        print(f"total time taken this loop: {end-start}", file=text_file)
-    # Do the last one if it was not covered
-    if (spect_idx - jump + chunk_size != spectrogram.shape[1]):
-        #print ('One final chunk!')
-        spect_slice = spectrogram[:, spect_idx: , :]
-        # Transform the slice 
-        # Should use the function from the dataset!!
-        spect_slice = (spect_slice - np.mean(spect_slice)) / np.std(spect_slice)
-        spect_slice = torch.from_numpy(spect_slice).float()
-        spect_slice = spect_slice.to(parameters.device)
-
-        outputs = model(spect_slice) # Shape - (1, chunk_size, 1)
-        # In the case of ResNet the output is forced to the chunk size
-        compressed_out = outputs.view(-1, 1).squeeze()[:predictions[spect_idx: ].shape[0]]
-
-        # Now check if we are running the hierarchical model
-        if hierarchical_model is not None:
-            chunk_preds = torch.sigmoid(compressed_out)
-            binary_preds = torch.where(chunk_preds > parameters.THRESHOLD, torch.tensor(1.0).to(parameters.device), torch.tensor(0.0).to(parameters.device))
-            pred_counts = torch.sum(binary_preds)
-            # Check if we need to run the second model
-            hierarchical_compressed_out = compressed_out
-            if pred_counts.item() >= hierarchy_threshold:
-                hierarchical_outputs = hierarchical_model(spect_slice)
-                hierarchical_compressed_out = hierarchical_outputs.view(-1, 1).squeeze()[:predictions[spect_idx: ].shape[0]]
-
-            # Save the hierarchical model's output
-            hierarchical_predictions[spect_idx: ] += hierarchical_compressed_out.cpu().detach().numpy()
-
-
-        overlap_counts[spect_idx: ] += 1
-        # Save the model_0's output!
-        predictions[spect_idx: ] += compressed_out.cpu().detach().numpy()
-
-
     # Average the predictions on overlapping frames
     predictions = predictions / overlap_counts
     if hierarchical_model is not None:
@@ -467,9 +379,143 @@ def predict_spec_sliding_window_(spectrogram, model, chunk_size=256, jump=128, h
 
     if hierarchical_model is not None:
         hierarchical_predictions = sigmoid(hierarchical_predictions)
+
+        end = time.time()
+        print("total time taken this loop: ", end - start)
+
         return hierarchical_predictions, predictions
+    
+
+    end = time.time()
+    print("total time taken this loop: ", end - start)
 
     return predictions
+
+
+   
+# def predict_spec_sliding_window_(spectrogram, model, chunk_size=256, jump=128, hierarchical_model=None, hierarchy_threshold=15):
+#     """
+#         Generate the prediction sequence for a full audio sequence
+#         using a sliding window. Slide the window by one spectrogram frame
+#         and pass each window through the given model. Compute the average
+#         over overlapping window predictions to get the final prediction.
+#         Allow for having a hierarchical model! If using a hierarchical model
+#         also save the model_0 predictions!
+
+#         Return:
+#         With Hierarchical Model - hierarchical predictions, model_0 predictions
+#         Solo Model - predictions
+#     """
+#     # Get the number of frames in the full audio clip
+#     predictions = np.zeros(spectrogram.shape[0])
+#     if hierarchical_model is not None:
+#         hierarchical_predictions = np.zeros(spectrogram.shape[0])
+
+#     # Keeps track of the number of predictions made for a given
+#     # slice for final averaging!
+#     overlap_counts = np.zeros(spectrogram.shape[0])
+    
+
+#     # This is a bit janky but we will manually transform
+#     # each spectrogram chunk
+#     #spectrogram = torch.from_numpy(spectrogram).float()
+#     # Add a batch dim for the model!
+#     #spectrogram = torch.unsqueeze(spectrogram, 0) # Shape - (1, time, freq)
+
+#     # Added!
+#     spectrogram = np.expand_dims(spectrogram,axis=0)
+
+#     # For the sliding window we slide the window by one spectrogram
+#     # frame, determined by the hop size.
+#     spect_idx = 0 # The frame idx of the beginning of the current window
+#     i = 0
+#     # How can I parallelize this shit?????? 
+#     start = time.time()
+#     pbar = tqdm(total = spectrogram.shape[1]+1)
+#     while  spect_idx + chunk_size <= spectrogram.shape[1]:
+#         spect_slice = spectrogram[:, spect_idx: spect_idx + chunk_size, :]
+#         # Transform the slice - this is definitely sketchy!!!! 
+#         spect_slice = (spect_slice - np.mean(spect_slice)) / np.std(spect_slice)
+#         spect_slice = torch.from_numpy(spect_slice).float()
+#         spect_slice = spect_slice.to(parameters.device)
+
+#         outputs = model(spect_slice) # Shape - (1, chunk_size, 1)
+#         compressed_out = outputs.view(-1, 1).squeeze()
+
+#         # Now check if we are running the hierarchical model
+#         if hierarchical_model is not None:
+#             chunk_preds = torch.sigmoid(compressed_out)
+#             binary_preds = torch.where(chunk_preds > parameters.THRESHOLD, torch.tensor(1.0).to(parameters.device), torch.tensor(0.0).to(parameters.device))
+#             pred_counts = torch.sum(binary_preds)
+#             # Check if we need to run the second model
+#             hierarchical_compressed_out = compressed_out
+#             if pred_counts.item() >= hierarchy_threshold:
+#                 hierarchical_outputs = hierarchical_model(spect_slice)
+#                 hierarchical_compressed_out = hierarchical_outputs.view(-1, 1).squeeze()
+
+#             # Save the hierarchical model's output
+#             hierarchical_predictions[spect_idx: spect_idx + chunk_size] += hierarchical_compressed_out.cpu().detach().numpy()
+
+#         overlap_counts[spect_idx: spect_idx + chunk_size] += 1
+#         # Save the model_0's output!
+#         predictions[spect_idx: spect_idx + chunk_size] += compressed_out.cpu().detach().numpy()
+
+#         spect_idx += jump
+#         i += 1
+#         pbar.update(1)
+#     pbar.close()
+#     end = time.time()
+#     print("total time taken this loop: ", end - start)
+#     with open("time_taken.txt", "w") as text_file:
+#         print(f"total time taken this loop: {end-start}", file=text_file)
+#     # Do the last one if it was not covered
+#     if (spect_idx - jump + chunk_size != spectrogram.shape[1]):
+#         #print ('One final chunk!')
+#         spect_slice = spectrogram[:, spect_idx: , :]
+#         # Transform the slice 
+#         # Should use the function from the dataset!!
+#         spect_slice = (spect_slice - np.mean(spect_slice)) / np.std(spect_slice)
+#         spect_slice = torch.from_numpy(spect_slice).float()
+#         spect_slice = spect_slice.to(parameters.device)
+
+#         outputs = model(spect_slice) # Shape - (1, chunk_size, 1)
+#         # In the case of ResNet the output is forced to the chunk size
+#         compressed_out = outputs.view(-1, 1).squeeze()[:predictions[spect_idx: ].shape[0]]
+
+#         # Now check if we are running the hierarchical model
+#         if hierarchical_model is not None:
+#             chunk_preds = torch.sigmoid(compressed_out)
+#             binary_preds = torch.where(chunk_preds > parameters.THRESHOLD, torch.tensor(1.0).to(parameters.device), torch.tensor(0.0).to(parameters.device))
+#             pred_counts = torch.sum(binary_preds)
+#             # Check if we need to run the second model
+#             hierarchical_compressed_out = compressed_out
+#             if pred_counts.item() >= hierarchy_threshold:
+#                 hierarchical_outputs = hierarchical_model(spect_slice)
+#                 hierarchical_compressed_out = hierarchical_outputs.view(-1, 1).squeeze()[:predictions[spect_idx: ].shape[0]]
+
+#             # Save the hierarchical model's output
+#             hierarchical_predictions[spect_idx: ] += hierarchical_compressed_out.cpu().detach().numpy()
+
+
+#         overlap_counts[spect_idx: ] += 1
+#         # Save the model_0's output!
+#         predictions[spect_idx: ] += compressed_out.cpu().detach().numpy()
+
+
+#     # Average the predictions on overlapping frames
+#     predictions = predictions / overlap_counts
+#     if hierarchical_model is not None:
+#         hierarchical_predictions = hierarchical_predictions / overlap_counts
+
+#     # Get squashed [0, 1] predictions
+#     predictions = sigmoid(predictions)
+
+#     if hierarchical_model is not None:
+#         hierarchical_predictions = sigmoid(hierarchical_predictions)
+#         return hierarchical_predictions, predictions
+
+#     return predictions
+
 
 
 def generate_predictions_full_spectrograms(dataset, model, model_id, predictions_path, 
@@ -485,6 +531,7 @@ def generate_predictions_full_spectrograms(dataset, model, model_id, predictions
         Status:
         - works without saving with negative factor
     """
+    pdb.set_trace()
     for data in dataset:
         spectrogram = data[0]
         gt_call_path = data[2]
@@ -508,7 +555,8 @@ def generate_predictions_full_spectrograms(dataset, model, model_id, predictions
                                         hierarchy_threshold=hierarchy_threshold)
         else:
             # Just leave out for now!
-            predictions = predict_spec_full(spectrogram, model)
+            # predictions = predict_spec_full(spectrogram, model)
+            continue
 
         # Save preditions
         # Save for now to a folder determined by the model id
@@ -1117,7 +1165,7 @@ def get_spectrogram_paths(test_files_path, spectrogram_path):
     paths = {'specs': [],
             'labels': [],
             'gts': []}
-
+    # pdb.set_trace()
     with open(test_files_path, 'r') as f:
         lines = f.readlines()
 
@@ -1133,7 +1181,9 @@ def get_spectrogram_paths(test_files_path, spectrogram_path):
 
     return paths
 
-def main(args):
+if __name__ == '__main__':
+    args = parser.parse_args()
+
     """
     Example runs:
 
@@ -1215,9 +1265,4 @@ def main(args):
             os.mkdir(save_path)
         # Save the predictions
         create_predictions_csv(full_dataset, predictions, save_path)
-
-
-if __name__ == '__main__':
-    args = parser.parse_args()
-    main(args)
 
