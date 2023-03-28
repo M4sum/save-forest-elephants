@@ -20,7 +20,7 @@ duration = float(raw_audio.size / samplerate)
 print(f'audio file is {duration} seconds long')
 
 
-#audio_path = "my_audio_file.mp3"
+# audio_path = "my_audio_file.mp3"
 target_sampling_rate = 8000  #the input audio will be resampled a this sampling rate 44100
 n_channels = 1  #either 1 or 2
 waveform_duration = 10 #in seconds 30
@@ -71,4 +71,5 @@ file_content=obj.get()['Body'].read().decode(encoding="utf-8",errors="ignore")
 # Print the contents of the file
 print(file_content)
 #print(type(file_content))
+#blablabla
 '''
