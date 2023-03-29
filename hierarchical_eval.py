@@ -4,27 +4,27 @@ line, it is also run by Inference_pipeline.py.  For a higher level
 experience, take a look at that module.
 '''
 
-
-import numpy as np
-import torch
-import torch.nn as nn
-import os
 import argparse
-from scipy.ndimage import gaussian_filter1d
-from sklearn.metrics import f1_score
-import math
+from concurrent.futures import as_completed
 import csv
-import time
-from tqdm import tqdm
+from data import get_loader, ElephantDatasetFull, SpectrogramDataset
+import math
 import multiprocessing as mp
 from multiprocessing import Pool, cpu_count
-import pdb
-from concurrent.futures import as_completed
-
+import numpy as np
+import os
 import parameters
-from data import get_loader, ElephantDatasetFull
-from visualization import visualize, visualize_predictions
+import pdb
+from scipy.ndimage import gaussian_filter1d
+from sklearn.metrics import f1_score
+import time
+import torch
+import torch.nn as nn
+from torch.utils.data import Dataset, DataLoader
+from tqdm import tqdm
 from utils import sigmoid, calc_accuracy, get_f_score, hierarchical_model_1_path
+from visualization import visualize, visualize_predictions
+
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--preds_path', type=str, dest='predictions_path', default='../Predictions',
@@ -267,6 +267,7 @@ def process_slice(spect_slice, model,
     spect_slice = spect_slice.to(parameters.device)
 
     outputs = model(spect_slice) # Shape - (1, chunk_size, 1)
+
     if last_chunk_flag:
         compressed_out = outputs.view(-1, 1).squeeze()[:predictions[spect_idx: ].shape[0]]
     else:
@@ -531,7 +532,7 @@ def generate_predictions_full_spectrograms(dataset, model, model_id, predictions
         Status:
         - works without saving with negative factor
     """
-    pdb.set_trace()
+    # pdb.set_trace()
     for data in dataset:
         spectrogram = data[0]
         gt_call_path = data[2]
@@ -1162,9 +1163,9 @@ def get_spectrogram_paths(test_files_path, spectrogram_path):
     # - spectrograms
     # - labels for each spectrogram slice
     # - gt (start, end) times for calls
-    paths = {'specs': [],
-            'labels': [],
-            'gts': []}
+    paths = {'spec': [],
+            'label': [],
+            'gt': []}
     # pdb.set_trace()
     with open(test_files_path, 'r') as f:
         lines = f.readlines()
@@ -1175,9 +1176,9 @@ def get_spectrogram_paths(test_files_path, spectrogram_path):
         # Create the spectrogram path by concatenating
         # the test file with the path to the folder
         # containing the spectrogram files
-        paths['specs'].append(spectrogram_path + '/' + file + '_spec.npy')
-        paths['labels'].append(spectrogram_path + '/' + file + '_label.npy')
-        paths['gts'].append(spectrogram_path + '/' + file + '_gt.txt')             
+        paths['spec'].append(spectrogram_path + '/' + file + '_spec.npy')
+        paths['label'].append(spectrogram_path + '/' + file + '_label.npy')
+        paths['gt'].append(spectrogram_path + '/' + file + '_gt.txt')             
 
     return paths
 
@@ -1207,16 +1208,32 @@ if __name__ == '__main__':
     if not os.path.isdir(args.call_predictions_path):
             os.mkdir(args.call_predictions_path)
 
+
     
     full_test_spect_paths = get_spectrogram_paths(args.test_files, args.spect_path)
+    spectrogram_dataset = SpectrogramDataset(full_test_spect_paths['spec'], 
+                                             chunk_size=parameters.CHUNK_SIZE, 
+                                             jump_size=parameters.PREDICTION_SLIDE_LENGTH)
+    
+    dataloader = DataLoader(spectrogram_dataset, batch_size=32, shuffle=True)
+
+    pdb.set_trace()
+    for batch, file_id in dataloader:
+        # process batch
+        for i in range(len(batch)):
+            chunk = batch[i]
+            spectrogram_path = spectrogram_paths[i]
+
+
     # Include flag indicating if we are just making predictions with no labels
-    full_dataset = ElephantDatasetFull(full_test_spect_paths['specs'],
-                 full_test_spect_paths['labels'], full_test_spect_paths['gts'], only_preds=args.only_predictions)    
+    full_dataset = ElephantDatasetFull(full_test_spect_paths['spec'],
+                 full_test_spect_paths['label'], full_test_spect_paths['gt'], only_preds=args.only_predictions)    
 
     if args.make_full_preds:
         generate_predictions_full_spectrograms(full_dataset, model_0, model_id, args.predictions_path,
              sliding_window=True, chunk_size=parameters.CHUNK_SIZE, jump=parameters.PREDICTION_SLIDE_LENGTH, 
-             hierarchical_model=model_1, hierarchy_threshold=parameters.FALSE_POSITIVE_THRESHOLD)   
+             hierarchical_model=model_1, hierarchy_threshold=parameters.FALSE_POSITIVE_THRESHOLD)
+
     elif args.full_stats:
         # Now we have to decide what to do with these stats
         results = eval_full_spectrograms(full_dataset, model_id, args.predictions_path, 
@@ -1235,7 +1252,7 @@ if __name__ == '__main__':
         precision = 0 if TP_test + FP == 0 else TP_test / (TP_test + FP) # For edge 0 case
         f1_call = 0 if precision + recall == 0 else 2 * (precision * recall) / (precision + recall)
         # Do false pos rate later!!!!
-        total_duration = 24. * len(full_test_spect_paths['specs'])
+        total_duration = 24. * len(full_test_spect_paths['spec'])
         false_pos_per_hour = FP / total_duration
 
         print ("++=================++")
@@ -1265,4 +1282,3 @@ if __name__ == '__main__':
             os.mkdir(save_path)
         # Save the predictions
         create_predictions_csv(full_dataset, predictions, save_path)
-
