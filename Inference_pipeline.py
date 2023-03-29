@@ -145,7 +145,7 @@ if __name__ == '__main__':
         + ' assume that this directory is "spect_out/data_dir"')
 
     args = parser.parse_args();
-    
+
     Inferance_Pipeline(
                         data_flag=args.process_data,
                         spect_dir=args.data_dir,
@@ -156,4 +156,3 @@ if __name__ == '__main__':
                         spect_path=args.spect_path
                         )
 
-        
