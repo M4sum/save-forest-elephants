@@ -5,9 +5,11 @@ experience, take a look at that module.
 '''
 
 import argparse
-from concurrent.futures import as_completed
+import asyncio
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 import csv
 from data import get_loader, ElephantDatasetFull, SpectrogramDataset
+from helper import save_predictions
 import math
 import multiprocessing as mp
 from multiprocessing import Pool, cpu_count
@@ -19,6 +21,7 @@ from scipy.ndimage import gaussian_filter1d
 from sklearn.metrics import f1_score
 import time
 import torch
+import torch.multiprocessing as mp
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
@@ -262,9 +265,9 @@ def process_slice(spect_slice, model,
                   predictions):
     
     # Transform the slice - this is definitely sketchy!!!! 
-    spect_slice = (spect_slice - np.mean(spect_slice)) / np.std(spect_slice)
-    spect_slice = torch.from_numpy(spect_slice).float()
-    spect_slice = spect_slice.to(parameters.device)
+    # spect_slice = (spect_slice - np.mean(spect_slice)) / np.std(spect_slice)
+    # spect_slice = torch.from_numpy(spect_slice).float()
+    # spect_slice = spect_slice.to(parameters.device)
 
     outputs = model(spect_slice) # Shape - (1, chunk_size, 1)
 
@@ -338,12 +341,10 @@ def predict_spec_sliding_window(spectrogram, model, chunk_size=256, jump=128, hi
 
     # divide the spectrogram into equal parts, each part will be processed in a separate process
     for spect_idx in range(0, spectrogram.shape[1], jump):
-        spect_slice = spectrogram[:, spect_idx:spect_idx + chunk_size, :]
-        # pdb.set_trace()
         last_chunk_flag = False
         if (spect_idx - jump + chunk_size != spectrogram.shape[1]):
             last_chunk_flag = True
-        processes.append(pool.apply_async(process_slice, args=(spect_slice, model, 
+        processes.append(pool.apply_async(_process_slice, args=(spect_slice, model, 
                                                              hierarchical_model, hierarchy_threshold, 
                                                              spect_idx, last_chunk_flag,
                                                              predictions)))
@@ -559,24 +560,7 @@ def generate_predictions_full_spectrograms(dataset, model, model_id, predictions
             # predictions = predict_spec_full(spectrogram, model)
             continue
 
-        # Save preditions
-        # Save for now to a folder determined by the model id
-        path = os.path.join(predictions_path,model_id)
-        if not os.path.isdir(path):
-            os.mkdir(path)
-
-        if hierarchical_model is not None:
-            hierarchical_predictions, model_0_predictions = predictions
-            # Create a folder for the model 0 predictions
-            model_0_path = os.path.join(path, "Model_0")
-            if not os.path.isdir(model_0_path):
-                os.mkdir(model_0_path)
-
-            np.save(os.path.join(model_0_path, data_id + '.npy'), model_0_predictions)
-            np.save(os.path.join(path, data_id + '.npy'), hierarchical_predictions)
-        else:
-            # The data id associates predictions with a particular spectrogram
-            np.save(os.path.join(path, data_id  + '.npy'), predictions)
+        
 
 def test_overlap(s1, e1, s2, e2, threshold=0.1, is_truth=False):
     """
@@ -1003,7 +987,7 @@ def precision_recall_curve_pred_threshold(dataset, model_id, pred_path, num_poin
     plt.ylabel("Precision")
     plt.savefig("../Figures/PR_Curve_" + str(model_id))
 
-def extract_call_predictions(dataset, model_id, predictions_path, pred_threshold=0.5, smooth=True, 
+def extract_call_predictions(spect_paths, model_id, predictions_path, pred_threshold=0.5, smooth=True, 
             in_seconds=False, min_call_length=10, visualize=False):
     """
         Extract model predictions as calls of the form (start, end, length) 
@@ -1014,15 +998,15 @@ def extract_call_predictions(dataset, model_id, predictions_path, pred_threshold
     results = {} 
     
     num_preds = 0
-    for data in dataset:
-        spectrogram = data[0]
-        labels = data[1]
-        gt_call_path = data[2]
+    for path in spect_paths:
+        # spectrogram = data[0]
+        # labels = data[1]
+        # gt_call_path = data[2]
 
         # Get the spec id - stripping off the final tage '_gt.txt'
-        tags = gt_call_path.split('/')
-        last_tag = tags[-1]
-        data_id = last_tag[:-7]
+        # tags = path.split('/')
+        # last_tag = tags[-1]
+        data_id = path.split('/')[-1].split('.')[0]
         print ("Generating Prediction for:", data_id)
         
         predictions = np.load(predictions_path + '/' + model_id + "/" + data_id + '.npy')
@@ -1182,6 +1166,62 @@ def get_spectrogram_paths(test_files_path, spectrogram_path):
 
     return paths
 
+def process_batch(spectrogram_dataset, model_0, model_1, chunk_size, 
+                  hierarchy_threshold, spect_path):
+
+    dataloader = DataLoader(spectrogram_dataset, batch_size=64, shuffle=False, num_workers=2)
+    predictions = np.zeros(len(dataloader.dataset))
+    if model_1 is not None:
+        hierarchical_predictions = np.zeros(len(dataloader.dataset))
+    overlap_counts = np.zeros(len(dataloader.dataset))
+
+    # pbar = tqdm(total = np.ceil(len(dataloader.dataset)/(dataloader.batch_size*chunk_size)))
+    # s = time.time()
+    for spect_slice, start_idx, file_idx in dataloader:
+        # print(f"first checkpoint: {time.time()-s}")
+        # Pass the batch to the model and get outputs.
+        outputs = model_0(spect_slice) # shape: (batch_size, chunk_size)
+        # print(f"outputs generated: {time.time()-s}")
+        compressed_out = outputs.view(-1, 1).squeeze() # shape (batch_size*chunk_size,) - stacked horizontally
+
+        predictions[start_idx[0]: start_idx[0] + compressed_out.shape[0]] += compressed_out.cpu().detach().numpy()
+
+        # Now check if we are running the hierarchical model
+        if model_1 is not None:
+            chunk_preds = torch.sigmoid(compressed_out)
+            binary_preds = torch.where(chunk_preds > parameters.THRESHOLD, 
+                                    torch.tensor(1.0).to(parameters.device), 
+                                    torch.tensor(0.0).to(parameters.device))
+            pred_counts = torch.sum(binary_preds)
+            hierarchical_compressed_out = compressed_out
+
+            # Check if we need to run the second model
+            if pred_counts.item() >= hierarchy_threshold:
+                hierarchical_outputs = model_1(spect_slice)
+                hierarchical_compressed_out = hierarchical_outputs.view(-1, 1).squeeze()
+                hierarchical_predictions[start_idx[0]: start_idx[0] + hierarchical_compressed_out.shape[0]] += hierarchical_compressed_out.cpu().detach().numpy()
+
+        overlap_counts[start_idx[0]: start_idx[0] + compressed_out.shape[0]] += 1
+        # print(f"prediction arrays modified: {time.time()-s}")
+
+        # when last chunk of a 24 hour file, save
+        if len(start_idx) < dataloader.batch_size or start_idx[-1] + 1 + chunk_size >= len(dataloader.dataset):
+            
+            data_id = spect_path[file_idx[0]].split('/')[-1].split('.')[0]
+            # Average the predictions on overlapping frames
+            predictions = predictions / overlap_counts
+            if model_1 is not None:
+                hierarchical_predictions = hierarchical_predictions / overlap_counts
+
+            # Get squashed [0, 1] predictions
+            predictions = sigmoid(predictions)
+
+            if model_1 is not None:
+                hierarchical_predictions = sigmoid(hierarchical_predictions)
+
+            save_predictions(model_id, data_id, model_1, predictions, args.predictions_path)
+
+
 if __name__ == '__main__':
     args = parser.parse_args()
 
@@ -1202,45 +1242,62 @@ if __name__ == '__main__':
     model_0.eval()
     model_1.eval()
 
+    outputs=[]
+    chunk_size = parameters.CHUNK_SIZE
+    jump_size = parameters.PREDICTION_SLIDE_LENGTH
+    hierarchy_threshold=parameters.FALSE_POSITIVE_THRESHOLD
+
     # Need to make sure the save paths exist!
     if not os.path.isdir(args.predictions_path):
             os.mkdir(args.predictions_path)
     if not os.path.isdir(args.call_predictions_path):
             os.mkdir(args.call_predictions_path)
 
-
-    
     full_test_spect_paths = get_spectrogram_paths(args.test_files, args.spect_path)
+
     spectrogram_dataset = SpectrogramDataset(full_test_spect_paths['spec'], 
-                                             chunk_size=parameters.CHUNK_SIZE, 
-                                             jump_size=parameters.PREDICTION_SLIDE_LENGTH)
+                                                chunk_size, 
+                                                jump_size=jump_size)
     
-    dataloader = DataLoader(spectrogram_dataset, batch_size=32, shuffle=True)
-
-    pdb.set_trace()
-    for batch, file_id in dataloader:
-        # process batch
-        for i in range(len(batch)):
-            chunk = batch[i]
-            spectrogram_path = spectrogram_paths[i]
-
-
-    # Include flag indicating if we are just making predictions with no labels
-    full_dataset = ElephantDatasetFull(full_test_spect_paths['spec'],
-                 full_test_spect_paths['label'], full_test_spect_paths['gt'], only_preds=args.only_predictions)    
-
+    # torch.manual_seed(args.seed)
+    # pdb.set_trace()
     if args.make_full_preds:
-        generate_predictions_full_spectrograms(full_dataset, model_0, model_id, args.predictions_path,
-             sliding_window=True, chunk_size=parameters.CHUNK_SIZE, jump=parameters.PREDICTION_SLIDE_LENGTH, 
-             hierarchical_model=model_1, hierarchy_threshold=parameters.FALSE_POSITIVE_THRESHOLD)
+        mp.set_start_method('spawn', force=True)
+
+        model_0 = model_0.to(parameters.device)
+        model_0.share_memory() # gradients are allocated lazily, so they are not shared here
+
+        processes = []
+        pbar = tqdm(total=cpu_count())
+        for rank in range(cpu_count()):
+            p = mp.Process(target=process_batch, args=(spectrogram_dataset, model_0, model_1, chunk_size, 
+                                                hierarchy_threshold, full_test_spect_paths['spec']))
+            # We first train the model across `num_processes` processes
+            p.start()
+            processes.append(p)
+        for p in tqdm(processes):
+            p.join()
+            # pbar.update(1)
+        # process_batch(spectrogram_dataset, model_0, model_1, chunk_size, 
+        #           hierarchy_threshold, full_test_spect_paths)
+            
+        pbar.close()
+
+    # # Include flag indicating if we are just making predictions with no labels
+    #     full_dataset = ElephantDatasetFull(full_test_spect_paths['spec'],
+    #                 full_test_spect_paths['label'], full_test_spect_paths['gt'], only_preds=args.only_predictions)    
+    # if args.make_full_preds:
+    #     generate_predictions_full_spectrograms(full_dataset, model_0, model_id, args.predictions_path,
+    #         sliding_window=True, chunk_size=parameters.CHUNK_SIZE, jump=parameters.PREDICTION_SLIDE_LENGTH, 
+    #         hierarchical_model=model_1, hierarchy_threshold=parameters.FALSE_POSITIVE_THRESHOLD)
 
     elif args.full_stats:
         # Now we have to decide what to do with these stats
-        results = eval_full_spectrograms(full_dataset, model_id, args.predictions_path, 
+        results = eval_full_spectrograms(spectrogram_dataset, model_id, args.predictions_path, 
                         min_call_length=parameters.MIN_CALL_LENGTH ,pred_threshold=parameters.EVAL_THRESHOLD)
 
         if args.visualize: # Visualize the metric results
-            visualize_elephant_call_metric(full_dataset, results)
+            visualize_elephant_call_metric(spectrogram_dataset, results)
 
         # Display the output of results as peter did
         TP_truth = results['summary']['true_pos_recall']
@@ -1270,15 +1327,15 @@ if __name__ == '__main__':
         print("Segmentation f1-score:", results['summary']['f_score'])
         print("Average accuracy:", results['summary']['accuracy'])
     elif args.pr_curve > 0:
-        precision_recall_curve_pred_threshold(full_dataset, model_id, args.predictions_path, 
+        precision_recall_curve_pred_threshold(spectrogram_dataset, model_id, args.predictions_path, 
                                                 args.pr_curve, args.overlaps, 
                                                 min_call_length=parameters.MIN_CALL_LENGTH)
     elif args.save_calls:
-        predictions = extract_call_predictions(full_dataset, model_id, args.predictions_path, 
+        predictions = extract_call_predictions(full_test_spect_paths['spec'], model_id, args.predictions_path, 
                     min_call_length=parameters.MIN_CALL_LENGTH, pred_threshold=parameters.EVAL_THRESHOLD)
         # Save for now to a folder determined by the model id
         save_path = args.call_predictions_path + '/' + model_id
         if not os.path.isdir(save_path):
             os.mkdir(save_path)
         # Save the predictions
-        create_predictions_csv(full_dataset, predictions, save_path)
+        create_predictions_csv(spectrogram_dataset, predictions, save_path)

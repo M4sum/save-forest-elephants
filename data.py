@@ -1,3 +1,5 @@
+import asyncio
+from helper import load_spectrograms
 import matplotlib.pyplot as plt
 import numpy as np
 import pdb
@@ -12,6 +14,7 @@ import os
 import glob
 import parameters
 from torch.utils.data import Dataset, DataLoader
+
 
 from utils import set_seed
 
@@ -580,48 +583,84 @@ class ElephantDataset(data.Dataset):
 
 class SpectrogramDataset(Dataset):
     def __init__(self, spectrogram_file_paths, chunk_size, jump_size):
+        """
+        initializes SpectrogramDatset object by storing some basic attributes we need later.
+
+        Args:
+            spectrogram_file_paths (list(str)) : returns list of paths of spectrogram files
+            chunk_size (int) : length of 1 spectrogram slice to be fed to the model
+            jump_size (int) : length to slide the sliding window to create slices of spetrogram
+        """
         self.spectrogram_file_paths = spectrogram_file_paths
         self.chunk_size = chunk_size
         self.jump_size=jump_size
-        self.total_length = sum([np.load(f).shape[0]
-                               for f in spectrogram_file_paths])
+        self.total_length = sum([np.load(f).shape[0] for f in spectrogram_file_paths])
         
         assert jump_size != 0, "Zero Division Error. Also, jump_size = 0 means the sliding window doesn't move at all!"
         assert jump_size <= chunk_size, "You'll miss data to prrocess if jump_size > chunk_size"
 
         self.num_chunks = int(np.ceil((self.total_length - chunk_size)/jump_size) + 1)
         self.file_idx = 0
+        self.spectrogram = np.load(spectrogram_file_paths[self.file_idx])
 
     def __len__(self):
         return self.total_length
-
-    def __getitem__(self, idx):
-        """
-        This method returns an item form dataloader when dataloader is enumerated to do processes.
-        Think about what should be passed in to return a batch of spectrogram chunks, and how to return that.
-        Also think about loading chunks from different files.
-        """
-
+    
+    def __getitem__(self, index):
         # pdb.set_trace()
-        # file_num_chunks = int(np.ceil((np.load(self.spectrogram_file_paths[self.file_idx]).shape[0] - self.chunk_size)/self.jump_size) + 1)
+        # spectrogram = np.expand_dims(spectrogram,axis=0)
+        if index >= self.spectrogram.shape[0]:
+            self.file_idx += 1
+            self.file = np.load(self.spectrogram_file_paths[self.file_idx])
+            index -= len(self.spectrogram)
+        
+        slice = self.spectrogram[index: index+self.chunk_size,:]
+        slice = (slice - np.mean(slice)) / np.std(slice)
+        slice = torch.from_numpy(slice).float()
+        slice = slice.to(parameters.device)
+        return slice, index, self.file_idx
 
-        # if idx >= file_num_chunks:
-        #     self.file_idx +=1
-        # while idx >= (np.load(self.spectrogram_file_paths[file_idx]).shape[0] - self.chunk_size) + 1:
-        #     idx -= (np.load(self.spectrogram_file_paths[file_idx]).shape[0] - self.chunk_size) + 1
-        #     file_idx += 1
+    # async def __getitem__(self, idx):
+    #     """
+    #     This method returns an item form dataloader when dataloader is enumerated to do processes.
+    #     Think about what should be passed in to return a batch of spectrogram chunks, and how to return that.
+    #     Also think about loading chunks from different files.
+    #     """
 
-        start = idx
-        end = idx + self.chunk_size
+    #     # pdb.set_trace()
+    #     # file_num_chunks = int(np.ceil((np.load(self.spectrogram_file_paths[self.file_idx]).shape[0] - self.chunk_size)/self.jump_size) + 1)
 
-        spectrogram = np.load(self.spectrogram_file_paths[self.file_idx])
-        if start >= spectrogram.shape[0]:
-            self.file_idx +=1
-            start -= spectrogram.shape[0]
-            start -= spectrogram.shape[0]
+    #     # if idx >= file_num_chunks:
+    #     #     self.file_idx +=1
+    #     # while idx >= (np.load(self.spectrogram_file_paths[file_idx]).shape[0] - self.chunk_size) + 1:
+    #     #     idx -= (np.load(self.spectrogram_file_paths[file_idx]).shape[0] - self.chunk_size) + 1
+    #     #     file_idx += 1
 
-        chunk = spectrogram[start:end, :]
-        return chunk, self.file_idx
+    #     loaded_data = {}
+    #     tasks = []
+
+    #     start = idx
+    #     end = idx + self.chunk_size
+
+
+    #     for i, file_path in enumerate(self.spectrogram_file_paths):
+    #         task = asyncio.create_task(load_spectrograms(file_path, i))
+    #         tasks.append(task)
+
+    #     for tasks in task:
+    #         spectrogram, file_id = await task
+
+    #         if start >= spectrogram.shape[0]:
+    #             self.file_idx +=1
+    #             start -= spectrogram.shape[0]
+    #             end -= spectrogram.shape[0]
+
+    #         chunk = spectrogram[start:end, :]
+    #     return (chunk, self.file_idx, idx)
+
+
+
+
     
     # def _get_spectrogram_paths(test_files_path, spectrogram_path):
     #     """
