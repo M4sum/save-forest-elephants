@@ -604,15 +604,17 @@ class SpectrogramDataset(Dataset):
         self.spectrogram = np.load(spectrogram_file_paths[self.file_idx])
 
     def __len__(self):
-        return self.total_length
+        return np.ceil(self.total_length/self.jump_size)
     
     def __getitem__(self, index):
-        # pdb.set_trace()
+        pdb.set_trace()
         # spectrogram = np.expand_dims(spectrogram,axis=0)
-        if index >= self.spectrogram.shape[0]:
-            self.file_idx += 1
-            self.file = np.load(self.spectrogram_file_paths[self.file_idx])
-            index -= len(self.spectrogram)
+        index = index*self.jump_size
+        if index >= np.ceil(self.spectrogram.shape[0]/self.jump_size):
+            if os.path.isfile(self.spectrogram_file_paths[self.file_idx]):
+                self.file_idx += 1
+                self.file = np.load(self.spectrogram_file_paths[self.file_idx])
+                index -= len(self.spectrogram)
         
         slice = self.spectrogram[index: index+self.chunk_size,:]
         slice = (slice - np.mean(slice)) / np.std(slice)
