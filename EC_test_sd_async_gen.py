@@ -71,51 +71,38 @@ async def outputstream_generator(blocksize, *, channels=1, dtype='float32',
         The output blocks are uninitialized and have to be filled with
         appropriate audio signals.
         """
+    data, fs = sf.read(AUDIO_FILE_PATH, always_2d=True)
+
     assert blocksize != 0
     # q_out = queue.Queue()
     q_out = asyncio.Queue()
     loop = asyncio.get_event_loop()
 
     def callback(indata, frames, time, status):
-        assert frames == 2048
-        if status.output_underflow:
-            print('Output underflow: increase blocksize?', file=sys.stderr)
-            raise sd.CallbackAbort
-        assert not status
-        try:
-            data = q_out.get_nowait()
-            data = data[..., np.newaxis]
-        except queue.Empty as e:
-            print('Buffer is empty: increase buffersize?', file=sys.stderr)
-            # stream.close()          # ???
-            raise sd.CallbackAbort from e
-        if len(data) < len(indata):
-            indata[:len(data)] = data
-            indata[len(data):].fill(0)
-            print('Probably last bit, incoming length discrepancy')
-            raise sd.CallbackStop
-        else:
-            indata[:] = data
-        #loop.call_soon_threadsafe(q_out.put_nowait, (indata.copy(), status))
+        global current_frame
+        if status:
+            print(status)
+        chunksize = min(len(data) - current_frame, frames)
+        indata[:chunksize] = data[current_frame:current_frame + chunksize]
+        if chunksize < frames:
+            indata[chunksize:] = 0
+            raise sd.CallbackStop()
+        current_frame += chunksize
+        loop.call_soon_threadsafe(q_out.put_nowait, (indata.copy(), status))
         print(f'outputstream_generator callback executed with frames {frames}')
+        # outdata[:] = q_out.get_nowait()
 
-    with sf.SoundFile(AUDIO_FILE_PATH) as f:
-        for _ in range(20):
-            data = f.read(2048)
-            if not len(data):
-                break
-            q_out.put_nowait(data)  # Pre-fill queue
-        stream = sd.OutputStream(samplerate=f.samplerate, blocksize=2048, device=sd.default.device, channels=f.channels, callback=callback)
-        with stream:
-            # timeout = 2048 * 20 / f.samplerate
-            while len(data):
-                # data = f.read(args.blocksize)
-                data = f.read(2048)
-                q_out.put(data)
+    stream = sd.OutputStream(samplerate=fs, device=sd.default.device, channels=data.shape[1], callback=callback)
+    with stream:
+        while True:
+            outdata, status = await q_out.get()
+            yield outdata, status
+            #q_out.put_nowait(outdata)
             if q_out.empty():
-                stream.close
-
-
+                #loop.stop()
+                #loop.close()   # ???
+                stream.stop()  # ???
+                break
 
 async def print_input_infos(**kwargs):
     """Show minimum and maximum value of each incoming audio block."""
