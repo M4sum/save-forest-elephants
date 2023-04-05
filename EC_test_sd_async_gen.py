@@ -1,3 +1,4 @@
+# https://github.com/spatialaudio/python-sounddevice/blob/master/examples/asyncio_generators.py
 #!/usr/bin/env python3
 """Creating an asyncio generator for blocks of audio data.
 
@@ -14,6 +15,9 @@ import sys
 
 import numpy as np
 import sounddevice as sd
+import soundfile as sf
+
+AUDIO_FILE_PATH = "C:\\Users\\estin\\PycharmProjects\\ElephantsEfficientProcessingTeam\\finding_manny\\input_data\\testmp3.mp3"
 
 
 async def inputstream_generator(channels=1, **kwargs):
@@ -34,10 +38,8 @@ async def inputstream_generator(channels=1, **kwargs):
 async def stream_generator(blocksize, *, channels=1, dtype='float32',
                            pre_fill_blocks=10, **kwargs):
     """Generator that yields blocks of input/output data as NumPy arrays.
-
     The output blocks are uninitialized and have to be filled with
     appropriate audio signals.
-
     """
     assert blocksize != 0
     q_in = asyncio.Queue()
@@ -46,6 +48,7 @@ async def stream_generator(blocksize, *, channels=1, dtype='float32',
 
     def callback(indata, outdata, frame_count, time_info, status):
         loop.call_soon_threadsafe(q_in.put_nowait, (indata.copy(), status))
+        print('stream_generator callback triggered')
         outdata[:] = q_out.get_nowait()
 
     # pre-fill output queue
@@ -60,6 +63,62 @@ async def stream_generator(blocksize, *, channels=1, dtype='float32',
             outdata = np.empty((blocksize, channels), dtype=dtype)
             yield indata, outdata, status
             q_out.put_nowait(outdata)
+
+
+async def outputstream_generator(blocksize, *, channels=1, dtype='float32',
+                           pre_fill_blocks=10, **kwargs):
+    """Generator that yields blocks of output data from wav file as NumPy arrays.
+        The output blocks are uninitialized and have to be filled with
+        appropriate audio signals.
+        """
+    assert blocksize != 0
+    q_out = queue.Queue()
+    loop = asyncio.get_event_loop()
+    def callback(indata, outdata, frame_count, time_info, status):
+        # loop.call_soon_threadsafe(q_out.put_nowait, (indata.copy(), status))
+        # outdata[:] = q_out.get_nowait()
+        assert frame_count == 2048
+        if status.output_underflow:
+            print('Output underflow: increase blocksize?', file=sys.stderr)
+            raise sd.CallbackAbort
+        assert not status
+        try:
+            data = q_out.get_nowait()
+            data = data[..., np.newaxis]
+        except queue.Empty as e:
+            print('Buffer is empty: increase buffersize?', file=sys.stderr)
+            raise sd.CallbackAbort from e
+        if len(data) < len(outdata):
+            outdata[:len(data)] = data
+            outdata[len(data):].fill(0)
+            raise sd.CallbackStop
+        else:
+            outdata[:] = data
+
+    '''
+    # pre-fill output queue
+    for _ in range(pre_fill_blocks):
+        q_out.put(np.zeros((blocksize, channels), dtype=dtype))
+    '''
+    with sf.SoundFile(AUDIO_FILE_PATH) as f:
+        for _ in range(20):
+            data = f.read(2048)
+            if not len(data):
+                break
+            q_out.put_nowait(data)  # Pre-fill queue
+        # stream = sd.OutputStream(samplerate=f.samplerate, blocksize=2048, device=sd.default.device, channels=f.channels, callback=callback)
+        stream = sd.Stream(samplerate=f.samplerate, blocksize=2048, device=sd.default.device, callback=callback, dtype=dtype, channels=f.channels, **kwargs)
+        with stream:
+            while True:
+                timeout = 2048 * 20 / f.samplerate
+                while len(data):
+                    data = f.read(2048)
+                    q_out.put(data, timeout=timeout)
+                # outdata = np.empty((blocksize, channels), dtype=dtype)
+                # outdata, status = await q_out.get()
+                # outdata[:] = q_out.get_nowait()
+                outdata = q_out.get()
+                yield outdata
 
 
 async def print_input_infos(**kwargs):
@@ -78,9 +137,13 @@ async def wire_coro(**kwargs):
 
     """
     async for indata, outdata, status in stream_generator(**kwargs):
-        if status:
-            print(status)
-        outdata[:] = indata
+       if status:
+           print(status)
+       outdata[:] = indata
+    # i = 0
+    # async for outdata in outputstream_generator(**kwargs):
+    #     print(f'processing {i}th chunk in outputstream_generator')
+    #     i += 1
 
 
 async def main(**kwargs):
@@ -103,6 +166,6 @@ async def main(**kwargs):
 
 if __name__ == "__main__":
     try:
-        asyncio.run(main(blocksize=1024))
+        asyncio.run(main(blocksize=2048))
     except KeyboardInterrupt:
         sys.exit('\nInterrupted by user')
