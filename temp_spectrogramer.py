@@ -5,6 +5,7 @@ from scipy.io import wavfile
 from os import path
 import os
 
+from time import time
 
 """
 Update this file!!
@@ -15,6 +16,7 @@ Let us also create a file at the end with all of the specs createdddd
 """
 
 if __name__ == '__main__':
+
     parser = argparse.ArgumentParser()
 
     # For use on quatro
@@ -60,6 +62,8 @@ if __name__ == '__main__':
         for(dirpath, dirnames, filenames) in os.walk(currentDir):
             # Iterate through the .wav spectrogram files to generate them!
             for audio_file in filenames:
+                # Set timer:
+                start = time()
                 tags = audio_file.split('.')
                 data_id = tags[0]
                 file_type = tags[1]
@@ -86,8 +90,13 @@ if __name__ == '__main__':
                 np.save(path.join(spect_dir, data_id + "_spec.npy"), spectrogram)
                 print ("processed " + data_id)
                 spect_files.append(data_id)
+                
+                # End timer
+                end = time()
+                print(f'temp_spectogramer took {end - start} seconds!')
 
         # Save the spect ids
         with open(path.join(spect_dir, 'spects.txt'), 'w') as f:
             for spect_id in spect_files:
                 f.write(spect_id + "\n")
+

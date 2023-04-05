@@ -43,6 +43,7 @@ import argparse
 import subprocess
 import sys
 import os
+from time import time
 
 parser = argparse.ArgumentParser()
 
@@ -73,7 +74,11 @@ class Inferance_Pipeline(object):
             print ("#####################################")
             print ("###### Processing Spectrograms ######")
             print ("#####################################")
+            from time import time
+            start = time()
             subprocess.run(["python", "temp_spectrogramer.py", "--data_dirs", spect_dir, "--out", spect_out])
+            end = time()
+            print(f'The entire spectogram creation took {end - start} seconds!')
 
         # Here we assume the data has been created and the path to the spectrograms
         # is the 'spect_out' folder. 
@@ -90,26 +95,32 @@ class Inferance_Pipeline(object):
             print ("#############################################")
             print ("####### Generating Model Segmentation #######")
             print ("#############################################")
+            from time import time
+            start = time()
             subprocess.run(["python", "hierarchical_eval.py", "--model_0", model_0, 
                             "--model_1", model_1, "--preds_path", "./Predictions",
                             "--call_preds_path", "./Call_Predictions",
                             "--spect_path", spect_path, "--only_predictions",
                             "--test_files", os.path.join(spect_path, "spects.txt"),
                             "--make_full_preds"])
+            end = time()
+            print(f'It took {end - start} seconds to generate model segmentation!')
 
             print ("####################################################")
             print ("####### Generating Elephant Call Predictions #######")
             print ("####################################################")
             # 2) Generate the elephant call predictions based on the model per time step
             # segmentation. Save results to './Call_Predictions'
+            from time import time
+            start = time()
             subprocess.run(["python", "hierarchical_eval.py", "--model_0", model_0, 
                             "--model_1", model_1, "--preds_path", "./Predictions",
                             "--call_preds_path", "./Call_Predictions",
                             "--spect_path", spect_path, "--only_predictions",
                             "--test_files", os.path.join(spect_path, "spects.txt"),
                             "--save_calls"])
-
-
+            end = time()
+            print(f'It took {end - start} seconds!')
 
 
 
