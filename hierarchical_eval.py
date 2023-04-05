@@ -1133,51 +1133,6 @@ def get_spectrogram_paths(test_files_path, spectrogram_path):
 
     return paths
 
-def process_batch(spectrogram_dataset, model_0, model_1, chunk_size, 
-                  hierarchy_threshold, spect_path):
-
-        outputs = model_0(spect_slice) # shape: (batch_size, chunk_size)
-        # print(f"outputs generated: {time.time()-s}")
-        compressed_out = outputs.view(-1, 1).squeeze() # shape (batch_size*chunk_size,) - stacked horizontally
-
-        predictions[start_idx[0]: start_idx[0] + compressed_out.shape[0]] += compressed_out.cpu().detach().numpy()
-
-        # Now check if we are running the hierarchical model
-        if model_1 is not None:
-            chunk_preds = torch.sigmoid(compressed_out)
-            binary_preds = torch.where(chunk_preds > parameters.THRESHOLD, 
-                                    torch.tensor(1.0).to(parameters.device), 
-                                    torch.tensor(0.0).to(parameters.device))
-            pred_counts = torch.sum(binary_preds)
-            hierarchical_compressed_out = compressed_out
-
-            # Check if we need to run the second model
-            if pred_counts.item() >= hierarchy_threshold:
-                hierarchical_outputs = model_1(spect_slice)
-                hierarchical_compressed_out = hierarchical_outputs.view(-1, 1).squeeze()
-                hierarchical_predictions[start_idx[0]: start_idx[0] + hierarchical_compressed_out.shape[0]] += hierarchical_compressed_out.cpu().detach().numpy()
-
-        overlap_counts[start_idx[0]: start_idx[0] + compressed_out.shape[0]] += 1
-        # print(f"prediction arrays modified: {time.time()-s}")
-
-        # when last chunk of a 24 hour file, save
-        if len(start_idx) < dataloader.batch_size or start_idx[-1] + 1 + chunk_size >= len(dataloader.dataset):
-            
-            data_id = spect_path[file_idx[0]].split('/')[-1].split('.')[0]
-            # Average the predictions on overlapping frames
-            predictions = predictions / overlap_counts
-            if model_1 is not None:
-                hierarchical_predictions = hierarchical_predictions / overlap_counts
-
-            # Get squashed [0, 1] predictions
-            predictions = sigmoid(predictions)
-
-            if model_1 is not None:
-                hierarchical_predictions = sigmoid(hierarchical_predictions)
-
-            save_predictions(model_id, data_id, model_1, predictions, args.predictions_path)
-
-@profile
 def process_slice(spect_slice, model, 
                   hierarchical_model, hierarchy_threshold, 
                   spect_idx, last_chunk_flag,
