@@ -18,7 +18,7 @@ import sounddevice as sd
 import soundfile as sf
 
 AUDIO_FILE_PATH = "C:\\Users\\estin\\PycharmProjects\\ElephantsEfficientProcessingTeam\\finding_manny\\input_data\\testmp3.mp3"
-
+current_frame = 0
 
 async def inputstream_generator(channels=1, **kwargs):
     """Generator that yields blocks of input data as NumPy arrays."""
@@ -71,34 +71,45 @@ async def outputstream_generator(blocksize, *, channels=1, dtype='float32',
         The output blocks are uninitialized and have to be filled with
         appropriate audio signals.
         """
+    data, fs = sf.read(AUDIO_FILE_PATH, always_2d=True)
+
     assert blocksize != 0
-    q_out = queue.Queue()
+    # q_out = queue.Queue()
+    q_out = asyncio.Queue()
     loop = asyncio.get_event_loop()
-    def callback(indata, outdata, frame_count, time_info, status):
-        # loop.call_soon_threadsafe(q_out.put_nowait, (indata.copy(), status))
+
+    def callback(indata, frames, time, status):
+        global current_frame
+        if status:
+            print(status)
+        chunksize = min(len(data) - current_frame, frames)
+        indata[:chunksize] = data[current_frame:current_frame + chunksize]
+        if chunksize < frames:
+            indata[chunksize:] = 0
+            raise sd.CallbackStop()
+        current_frame += chunksize
+        loop.call_soon_threadsafe(q_out.put_nowait, (indata.copy(), status))
+        print(f'outputstream_generator callback executed with frames {frames}')
         # outdata[:] = q_out.get_nowait()
-        assert frame_count == 2048
-        if status.output_underflow:
-            print('Output underflow: increase blocksize?', file=sys.stderr)
-            raise sd.CallbackAbort
-        assert not status
-        try:
-            data = q_out.get_nowait()
-            data = data[..., np.newaxis]
-        except queue.Empty as e:
-            print('Buffer is empty: increase buffersize?', file=sys.stderr)
-            raise sd.CallbackAbort from e
-        if len(data) < len(outdata):
-            outdata[:len(data)] = data
-            outdata[len(data):].fill(0)
-            raise sd.CallbackStop
-        else:
-            outdata[:] = data
+
+    stream = sd.OutputStream(samplerate=fs, device=sd.default.device, channels=data.shape[1], callback=callback)
+    with stream:
+        while True:
+            outdata, status = await q_out.get()
+            yield outdata, status
+            #q_out.put_nowait(outdata)
+            if q_out.empty():
+                #loop.stop()
+                #loop.close()   # ???
+                stream.stop()  # ???
+                break
+
 
     '''
     # pre-fill output queue
     for _ in range(pre_fill_blocks):
         q_out.put(np.zeros((blocksize, channels), dtype=dtype))
+    '''
     '''
     with sf.SoundFile(AUDIO_FILE_PATH) as f:
         for _ in range(20):
@@ -119,7 +130,7 @@ async def outputstream_generator(blocksize, *, channels=1, dtype='float32',
                 # outdata[:] = q_out.get_nowait()
                 outdata = q_out.get()
                 yield outdata
-
+    '''
 
 async def print_input_infos(**kwargs):
     """Show minimum and maximum value of each incoming audio block."""
@@ -136,23 +147,23 @@ async def wire_coro(**kwargs):
     simply copies the input data into the output block.
 
     """
-    async for indata, outdata, status in stream_generator(**kwargs):
-       if status:
-           print(status)
-       outdata[:] = indata
-    # i = 0
-    # async for outdata in outputstream_generator(**kwargs):
-    #     print(f'processing {i}th chunk in outputstream_generator')
-    #     i += 1
+    # async for indata, outdata, status in stream_generator(**kwargs):
+    #    if status:
+    #        print(status)
+    #    outdata[:] = indata
+    i = 0
+    async for outdata, status in outputstream_generator(**kwargs):
+        print(f'processing {i}th chunk in outputstream_generator')
+        i += 1
 
 
 async def main(**kwargs):
-    print('Some informations about the input signal:')
-    try:
-        await asyncio.wait_for(print_input_infos(), timeout=2)
-    except asyncio.TimeoutError:
-        pass
-    print('\nEnough of that, activating wire ...\n')
+    # print('Some informations about the input signal:')
+    # try:
+    #     await asyncio.wait_for(print_input_infos(), timeout=2)
+    # except asyncio.TimeoutError:
+    #     pass
+    # print('\nEnough of that, activating wire ...\n')
     audio_task = asyncio.create_task(wire_coro(**kwargs))
     for i in range(10, 0, -1):
         print(i)
