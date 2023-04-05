@@ -1,8 +1,6 @@
 import os
 import asyncio
 from aiomultiprocess import Pool
-# import multiprocessing as mp
-# from multiprocessing import Pool, cpu_count
 import sys
 import sounddevice as sd
 import soundfile as sf
@@ -10,17 +8,17 @@ from math import ceil
 
 AUDIO_FILE_PATH = "C:\\Users\\estin\\PycharmProjects\\ElephantsEfficientProcessingTeam\\finding_manny\\input_data\\testmp3.mp3"
 
-BLOCK_SIZE = 2048
+BLOCK_SIZE = 2496
 current_frame = 0
 
 async def generate_spectrogram_of_chunk(chunkID, chunk):
-    print(f'generate_spectrogram_of_chunk in {os.getpid()} with chunk {chunkID}')
+    # print(f'generate_spectrogram_of_chunk in {os.getpid()} with chunk {chunkID}')
     await asyncio.sleep(1)      # simulates generating spectrogram
     print(f'generate_spectrogram_of_chunk in {os.getpid()} woke up with chunk {chunkID}')
 
 
 async def predict_spec_sliding_window(chunkID, chunk):
-    print(f'predict_spec_sliding_window in {os.getpid()} with chunk {chunkID}')
+    # print(f'predict_spec_sliding_window in {os.getpid()} with chunk {chunkID}')
     await asyncio.sleep(1)      # simulates prediction
     print(f'predict_spec_sliding_window in {os.getpid()} woke up with chunk {chunkID}')
 
@@ -28,14 +26,14 @@ async def process_batch(processor_chunk):
     # print(f'process_batch function in process {os.getpid()} with args {input}')
     # Need to split processor_chunk into applicable chunks and can run each chunk concurrently -> I think use async for loop?
 
-    i = 0
+    idx = 0
     async for outdata, status in data_stream_generator(processor_chunk):
-        print(f'processing {i}th chunk in data_stream_generatorsize = {len(outdata)}')
-        await generate_spectrogram_of_chunk(i, outdata)  # simulates generating spectrogram
-        await predict_spec_sliding_window(i, outdata)  # simulates prediction
-        i += 1
+        print(f'processing {idx}th chunk in data_stream_generatorsize = {len(outdata)}')
+        await generate_spectrogram_of_chunk(idx, outdata)  # simulates generating spectrogram
+        await predict_spec_sliding_window(idx, outdata)  # simulates prediction
+        idx += 1
 
-    return i
+    return idx
 
 
 async def data_stream_generator(indata_processor_chunk, blocksize=BLOCK_SIZE, *, channels=1, dtype='float32',
@@ -48,6 +46,7 @@ async def data_stream_generator(indata_processor_chunk, blocksize=BLOCK_SIZE, *,
     q_out = asyncio.Queue()
     loop = asyncio.get_event_loop()
     fs = 48000
+
     def callback(indata, frames, time, status):
         global current_frame
         if status:
@@ -60,23 +59,20 @@ async def data_stream_generator(indata_processor_chunk, blocksize=BLOCK_SIZE, *,
         current_frame += chunksize
         loop.call_soon_threadsafe(q_out.put_nowait, (indata.copy(), status))
         print(f'outputstream_generator callback executed with frames {frames}')
-        # outdata[:] = q_out.get_nowait()
 
-    stream = sd.OutputStream(samplerate=fs, device=sd.default.device, channels=indata_processor_chunk.shape[1], callback=callback)
+    stream = sd.OutputStream(samplerate=fs, device=sd.default.device, blocksize=BLOCK_SIZE, channels=indata_processor_chunk.shape[1], callback=callback)
     with stream:
         while True:
             outdata, status = await q_out.get()
             yield outdata, status
-            #q_out.put_nowait(outdata)
             if q_out.empty():
-                #loop.stop()
-                #loop.close()   # ???
                 stream.stop()  # ???
                 break
 
 
 
 async def main(datadir):
+    # Need to loop for all files in the directory
     print(f'argument passed to async main {datadir}')
     print(f'number of available cores = {os.cpu_count()}')
     # Use input arguments for dataloader to get raw audio batches
@@ -104,9 +100,11 @@ async def main(datadir):
         async for result in pool.map(process_batch, dataloader):
             print(f'result returned = {result}')
             final_results.append(result)
-
+    # 34 result comes from processor_chunk_size = 42528, divided by frames = 1248 in generator = 34.07692
     await pool.join()
     pool.close()
+
+    # Can add part to extract elephant calls here for this entire file
 
     return final_results
 
