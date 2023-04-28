@@ -4,6 +4,13 @@ import numpy as np
 from scipy.io import wavfile
 from os import path
 import os
+from time import time
+import librosa
+import miniaudio
+import resampy
+import soundfile as sf
+
+TARGET_SR = 8000
 
 
 """
@@ -69,11 +76,77 @@ if __name__ == '__main__':
 
                 # We need to read the audio file so that we can use generate_spectrogram
                 audio_path = path.join(dirpath, audio_file)
+                # audio_path = "input_data\\split\\dz_20120206_000000.wav"          # 8kHz file
+                audio_path = "input_data\\split\\kp16_20150416_000000.wav"            # 4kHz file
                 try:
+                    time_start_load_file = time()
+                    # raw_audio_librosa, samplerate_librosa = librosa.load(audio_path, sr=TARGET_SR, mono=True)
+                    # raw_audio_librosa, samplerate_librosa = librosa.load(audio_path)
+                    # samplerate_wavfile, raw_audio_wavfile = wavfile.read(audio_path)
+                    raw_audio, samplerate = librosa.load(audio_path, sr=TARGET_SR, mono=True)
+                    if (samplerate < 4000):
+                        print("Sample Rate Unexpectadly low!", samplerate)
+                    print("File size", raw_audio.shape)
+                    print(f'samplerate = {samplerate}')
+
+                    '''
+                    raw_audio, sr = sf.read(audio_path, always_2d=True, dtype=np.float32)
+                    assert raw_audio.dtype == np.float32, 'Bad sample type: %r' % raw_audio.dtype
+                    # waveform = wav_data / 32768.0  # Convert to [-1.0, +1.0]
+                    # waveform = waveform.astype('float32')
+                    # Add normalization to deal with differences between wmv and mp4 amplitudes
+                    # waveform = waveform / np.max(np.abs(waveform))
+
+                    # Convert to mono and the expected sample rate.
+                    if len(raw_audio.shape) > 1:
+                        raw_audio = np.mean(raw_audio, axis=1)
+                    if sr != TARGET_SR:
+                        raw_audio = resampy.resample(raw_audio, sr, TARGET_SR)  # this takes crazy long when wav_data is long
+                    print("File size", raw_audio.shape)
+
+                    '''
+                    '''
+                    target_sampling_rate = TARGET_SR  # the input audio will be resampled a this sampling rate 44100
+                    n_channels = 1  # either 1 or 2
+                    waveform_duration = 60*60  # in seconds 30
+                    # offset = 10  # this means that we read only in the interval [15s, duration of file] 15
+                    waveform_generator = miniaudio.stream_file(
+                        filename=audio_path,
+                        sample_rate=target_sampling_rate,
+                        seek_frame=0,  # seek_frame = int(offset * target_sampling_rate),
+                        frames_to_read=int(waveform_duration * target_sampling_rate),
+                        output_format=miniaudio.SampleFormat.SIGNED16,  # miniaudio.SampleFormat.FLOAT32,
+                        nchannels=n_channels)
+
+                    raw_audio = None
+
+                    for i, waveform in enumerate(waveform_generator):
+                        # do something with the waveform....
+                        # print(f'{i}th waveform size = {len(waveform)}')
+                        if i == 0:
+                            raw_audio = waveform
+                        else:
+                            raw_audio = np.concatenate((raw_audio, waveform), axis=0)
+
+                    print("File size", raw_audio.shape)
+                    #print(f'samplerate = {samplerate}')
+                    samplerate = TARGET_SR
+                    '''
+
+                    '''
                     samplerate, raw_audio = wavfile.read(audio_path)
                     if (samplerate < 4000):
                         print ("Sample Rate Unexpectadly low!", samplerate)
                     print ("File size", raw_audio.shape)
+                    print(f'samplerate = {samplerate}')
+                    '''
+
+                    time_end_load_file = time()
+                    # print(f'wavfile took {time_end_load_file - time_start_load_file} to load wav')
+                    print(f'librosa took {time_end_load_file - time_start_load_file} to load, shape and resample wav')
+                    # print(f'miniaudio took {time_end_load_file - time_start_load_file} to load, shape and resample wav')
+                    # print(f'sf and resampy took {time_end_load_file - time_start_load_file} to load, shape and resample wav')
+
                 except:
                     print("FILE Failed", audio_file)
                     # Let us try this for now to see if it stops the failing
