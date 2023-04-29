@@ -114,7 +114,7 @@ if __name__ == '__main__':
 
                 spectrogram_info['samplerate'] = samplerate
                 # spectrogram = generate_spectrograms.generate_spectogram(raw_audio, spectrogram_info, data_id)     # Replace this with spectogram generation that is parallelized
-                start = time()
+                start_time = time()
 
                 chunk_size = 1000
                 len_chunk = (chunk_size - 1) * hop + NFFT
@@ -167,6 +167,8 @@ if __name__ == '__main__':
                 final_spec = final_spec.T
 
                 print("Finished making one 24 hour spectogram")
+                end_time = time()
+                print(f'Spectrogram generation for one file took {end_time-start_time} seconds')
 
                 # Want to save the corresponding label_file with the spectrogram!!
                 np.save(path.join(spect_dir, data_id + "_spec.npy"), final_spec)

@@ -39,6 +39,7 @@ python Inference_pipeline.py --make_predictions --model_0 2_Stage_Model/first_st
 """
 
 import temp_spectrogramer
+import temp_spectrogramer_compare_time
 import argparse
 import subprocess
 import sys
@@ -74,6 +75,7 @@ class Inferance_Pipeline(object):
             print ("###### Processing Spectrograms ######")
             print ("#####################################")
             subprocess.run(["python", "temp_spectrogramer.py", "--data_dirs", spect_dir, "--out", spect_out])
+            # subprocess.run(["python", "temp_spectrogramer_compare_time.py", "--data_dirs", spect_dir, "--out", spect_out])
 
         # Here we assume the data has been created and the path to the spectrograms
         # is the 'spect_out' folder. 
