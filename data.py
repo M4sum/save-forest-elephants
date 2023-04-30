@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pdb
 import torch
+import time
 # import aifc
 from scipy import signal
 from torch.utils import data
@@ -787,9 +788,10 @@ class ElephantDatasetFull(data.Dataset):
         spectrogram_path = self.specs[index]
         label_path = self.labels[index]
         gt_call_path = self.gt_calls[index]
-
+        s = time.time()
         spectrogram = np.load(spectrogram_path)
         spectrogram = self.transform(spectrogram)
+        print(f"Time taken to read a 24 hr file and transform: {time.time() - s}")
             
         # Honestly may be worth pre-process this
         #spectrogram = torch.from_numpy(spectrogram)

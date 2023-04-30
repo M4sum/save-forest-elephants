@@ -5,8 +5,9 @@ import csv
 import os
 import time
 import multiprocessing
+import pdb
 from scipy.io import wavfile
-from visualization import visualize
+# from visualization import visualize
 import math
 import argparse
 
@@ -83,13 +84,19 @@ def generate_spectogram(raw_audio, spectrogram_info, id, chunk_size=1000):
     pad_to = spectrogram_info['pad_to']
     samplerate = spectrogram_info['samplerate']
 
-    # Generate the spectogram in chunks
-    # of 1000 frames.
+    # Generate the spectogram in chunks of 1000 frames i.e. take 1000 spectrogram chunks as 1 array.
+    # Length of 1 such large chunk would be
+    # pdb.set_trace()
     len_chunk = (chunk_size - 1) * hop + NFFT
+
+    # Calculate number of chunks i.e ((total_length - window_size) / jump_size) +1
+    num_chunks = np.ceil((raw_audio.shape[0] - len_chunk) / (len_chunk - NFFT + hop)) + 1
+    # raw_audio_reshaped = raw_audio[:num_chunks * (len_chunk - NFFT + hop) + len_chunk].reshape(num_chunks, -1)
 
     final_spec = None
     start_chunk = 0
     i = 0
+    s = time.time()
     while start_chunk + len_chunk < raw_audio.shape[0]:
         if (i % 100 == 0):
             print ("Chunk number " + str(i) + ": " + id)
@@ -99,20 +106,24 @@ def generate_spectogram(raw_audio, spectrogram_info, id, chunk_size=1000):
         spectrum = spectrum[(freqs <= max_freq)]
 
         if i == 0:
-            final_spec = spectrum
-        else:
-            final_spec = np.concatenate((final_spec, spectrum), axis=1)
+            # shape = [num_freqs, num_total_frames]
+            final_spec = np.zeros((spectrum.shape[0], int(num_chunks*chunk_size)))
+
+        final_spec[:,i*chunk_size:(i+1)*chunk_size] = spectrum
+        # else:
+        #     final_spec = np.concatenate((final_spec, spectrum), axis=1)
 
         # Remember that we want to start as if we are doing one continuous sliding window
         start_chunk += len_chunk - NFFT + hop 
         i += 1
+    print(f"Time taken to generate spectrograms for a 24 hr audio file: {time.time() - s}")
 
-    # Do one final chunk for whatever remains at the end
-    [spectrum, freqs, t] = ml.specgram(raw_audio[start_chunk: start_chunk + len_chunk], 
-            NFFT=NFFT, Fs=samplerate, noverlap=(NFFT - hop), window=ml.window_hanning, pad_to=pad_to)
-    # Cutout the high frequencies that are not of interest
-    spectrum = spectrum[(freqs <= max_freq)]
-    final_spec = np.concatenate((final_spec, spectrum), axis=1)
+    # # Do one final chunk for whatever remains at the end
+    # [spectrum, freqs, t] = ml.specgram(raw_audio[start_chunk: start_chunk + len_chunk], 
+    #         NFFT=NFFT, Fs=samplerate, noverlap=(NFFT - hop), window=ml.window_hanning, pad_to=pad_to)
+    # # Cutout the high frequencies that are not of interest
+    # spectrum = spectrum[(freqs <= max_freq)]
+    # final_spec = np.concatenate((final_spec, spectrum), axis=1)
 
     print("Finished making one 24 hour spectogram")
     return final_spec.T

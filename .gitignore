@@ -6,3 +6,4 @@ Spectrograms/
 temp.py
 profile.json
 __pycache__/
+result.json

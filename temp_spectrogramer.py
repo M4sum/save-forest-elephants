@@ -88,6 +88,7 @@ if __name__ == '__main__':
                 spect_files.append(data_id)
 
         # Save the spect ids
-        with open(path.join(spect_dir, 'spects.txt'), 'w') as f:
+        with open(path.join(spect_dir, 'spects.txt'), 'w'
+                  ) as f:
             for spect_id in spect_files:
                 f.write(spect_id + "\n")

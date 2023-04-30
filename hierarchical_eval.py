@@ -1137,6 +1137,7 @@ def process_slice(spect_slice, model,
                   hierarchical_model, hierarchy_threshold, 
                   spect_idx, last_chunk_flag,
                   predictions):
+    # s = time.time()
     # Transform the slice - this is definitely sketchy!!!! 
     # spect_slice = (spect_slice - np.mean(spect_slice)) / np.std(spect_slice)
     with torch.no_grad():
@@ -1165,12 +1166,14 @@ def process_slice(spect_slice, model,
                     hierarchical_compressed_out = hierarchical_outputs.view(-1, 1).squeeze()[:predictions[spect_idx: ].shape[0]]
                 else:
                     hierarchical_compressed_out = hierarchical_outputs.view(-1, 1).squeeze()
-
-            return compressed_out.detach().numpy(), hierarchical_compressed_out.detach().numpy(), spect_idx
+            
+            # print(f"Time taken by processs_slice: {time.time() - s}")
+            return compressed_out.cpu().detach().numpy(), hierarchical_compressed_out.cpu().detach().numpy(), spect_idx
         
-        return compressed_out.detach().numpy(), spect_idx
+        return compressed_out.cpu().detach().numpy(), spect_idx
 
 if __name__ == '__main__':
+    start = time.time()
     args = parser.parse_args()
 
     """
@@ -1206,7 +1209,41 @@ if __name__ == '__main__':
 
     # Include flag indicating if we are just making predictions with no labels
     full_dataset = ElephantDatasetFull(full_test_spect_paths['spec'],
-                full_test_spect_paths['label'], full_test_spect_paths['gt'], only_preds=args.only_predictions)    
+                full_test_spect_paths['label'], full_test_spect_paths['gt'], only_preds=args.only_predictions)
+    
+# convert to spectrogram
+    # process the audio file, convert it to spectrogram
+    # save spectrogram file
+
+# Take spectrograms and generate predictions for elephant calls or gunshots
+    # Dataset from data
+    # slice.shape = (256, 77)
+    # Distribute slices to separate processes (multiprocessing)
+    #         Use asyncio to process all slices in batch concurrently
+    #                                 Chain generate_spectrogram_of_chunk
+    #                                             Predict_spec_sliding_window
+    #         Aggregate results for chunks to get one file’s ouput
+    #         Extract_call_predictions
+    #         Save calls
+
+
+
+    
+
+    # Dataset from data
+    #   (reads wav with miniaudio which gives chunks)
+    #   take this chunk/slices and convert it to spectrogram
+    #  Dataloader to get batches (slices of spectrogram) of data
+    #  for batch in dataloader:
+    #      batch.shape = (32, 256, 77)
+    #
+    #     Distribute batches to separate processes (multiprocessing)
+    #         Use asyncio to process all slices in batch concurrently
+    #                                 Chain generate_spectrogram_of_chunk
+    #                                             Predict_spec_sliding_window
+    #         Aggregate results for chunks to get one file’s ouput
+    #         Extract_call_predictions
+    #         Save calls
 
     if args.make_full_preds:
         for data in full_dataset:
@@ -1240,42 +1277,65 @@ if __name__ == '__main__':
                 # create a pool with the number of available cores
                 # pool = Pool(cpu_count())
 
-                start = time.time()
-
                 # divide the spectrogram into equal parts, each part will be processed in a separate process
-                with ProcessPoolExecutor() as executor:
-                    for spect_idx in range(0, spectrogram.shape[1], jump_size):
+                if parameters.device == "cpu":
+                    with ProcessPoolExecutor() as executor:
+                        s = time.time()
+                        for spect_idx in range(0, spectrogram.shape[1], jump_size):
+                            last_chunk_flag = False
+                            if (spect_idx - jump_size + chunk_size != spectrogram.shape[1]):
+                                last_chunk_flag = True
+                            # pdb.set_trace()
+                            spect_slice = spectrogram[:, spect_idx:spect_idx + chunk_size, :]
+                            processes.append(executor.submit(process_slice, spect_slice, model_0, 
+                                                                model_1, hierarchy_threshold, 
+                                                                spect_idx, last_chunk_flag,
+                                                                predictions))
+                        
+                        print(f"Time taken for distributing chunks to processors: {time.time() - s}")
+                        
+                        pbar2 = tqdm(total = len(processes))
+                        
+                        # wait for all processes to finish and collect compressed outputs
+                        for process in as_completed(processes):
+                            # pdb.set_trace()
+                            if model_1 is not None:
+                                c_out, hi_c_out, spect_idx = process.result()
+                                hierarchical_predictions[spect_idx: spect_idx + chunk_size] += hi_c_out
+                            
+                            else:
+                                c_out, spect_idx = process.result()
+
+                            predictions[spect_idx: spect_idx + chunk_size] += c_out
+                            overlap_counts[spect_idx: spect_idx + chunk_size] += 1
+
+                            pbar2.update(1)
+
+                        pbar2.close()
+                        # pool.close()
+                    # pool.join()
+
+                else:
+                    for spect_idx in tqdm(range(0, spectrogram.shape[1], jump_size)):
                         last_chunk_flag = False
                         if (spect_idx - jump_size + chunk_size != spectrogram.shape[1]):
                             last_chunk_flag = True
                         # pdb.set_trace()
                         spect_slice = spectrogram[:, spect_idx:spect_idx + chunk_size, :]
-                        processes.append(executor.submit(process_slice, spect_slice, model_0, 
-                                                            model_1, hierarchy_threshold, 
-                                                            spect_idx, last_chunk_flag,
-                                                            predictions))
-                    
-                    
-                    pbar2 = tqdm(total = len(processes))
-                    
-                    # wait for all processes to finish and collect compressed outputs
-                    for process in as_completed(processes):
-                        # pdb.set_trace()
                         if model_1 is not None:
-                            c_out, hi_c_out, spect_idx = process.result()
+                            c_out, hi_c_out, spect_idx = process_slice(spect_slice, model_0, 
+                                                        model_1, hierarchy_threshold, 
+                                                        spect_idx, last_chunk_flag,
+                                                        predictions)
                             hierarchical_predictions[spect_idx: spect_idx + chunk_size] += hi_c_out
-                        
                         else:
-                            c_out, spect_idx = process.result()
-
+                            c_out, spect_idx = process_slice(spect_slice, model_0, 
+                                                        model_1, hierarchy_threshold, 
+                                                        spect_idx, last_chunk_flag,
+                                                        predictions)
                         predictions[spect_idx: spect_idx + chunk_size] += c_out
                         overlap_counts[spect_idx: spect_idx + chunk_size] += 1
 
-                        pbar2.update(1)
-
-                    pbar2.close()
-                    # pool.close()
-                # pool.join()
                 
                 # Average the predictions on overlapping frames
                 predictions = predictions / overlap_counts
@@ -1328,14 +1388,14 @@ if __name__ == '__main__':
         total_duration = 24. * len(full_test_spect_paths['spec'])
         false_pos_per_hour = FP / total_duration
 
-        print ("++=================++")
-        print ("++ Summary results ++")
-        print ("++=================++")
-        print ("Hyper-Parameters")
-        print ("Using Model with ID:", model_id)
-        print ("Threshold:", parameters.EVAL_THRESHOLD)
-        print ("Minimun Call Length", parameters.MIN_CALL_LENGTH)
-        print ("Window Slide Step", parameters.PREDICTION_SLIDE_LENGTH)
+        print("++=================++")
+        print("++ Summary results ++")
+        print("++=================++")
+        print("Hyper-Parameters")
+        print("Using Model with ID:", model_id)
+        print("Threshold:", parameters.EVAL_THRESHOLD)
+        print("Minimun Call Length", parameters.MIN_CALL_LENGTH)
+        print("Window Slide Step", parameters.PREDICTION_SLIDE_LENGTH)
         print("Call precision:", precision)
         print("Call recall:", recall)
         print("f1 score calls:", f1_call)
@@ -1355,4 +1415,6 @@ if __name__ == '__main__':
         if not os.path.isdir(save_path):
             os.mkdir(save_path)
         # Save the predictions
-        create_predictions_csv(full_dataset, predictions, save_path)
+        create_predictions_csv(full_dataset, predictions, save_path
+    
+    print(f"Time taken to run inference and save results: {time.time() - start}")
