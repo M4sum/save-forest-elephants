@@ -73,10 +73,9 @@ if __name__ == '__main__':
     # Loop through the directory and process the .wav files
     for currentDir in data_dirs:
         # Get the final name of the directory with the spect files
-        files_dirs = currentDir.split('/')
-        file_dir_name = files_dirs[-2] if files_dirs[-1] == '' else files_dirs[-1]
+        current_path, tail = os.path.split(currentDir)
         # Create the output directory
-        spect_dir = path.join(outputDir, file_dir_name)
+        spect_dir = path.join(outputDir, tail)
         if not path.exists(spect_dir):
             os.mkdir(spect_dir)
 
@@ -93,8 +92,8 @@ if __name__ == '__main__':
                     continue
 
                 # We need to read the audio file so that we can use generate_spectrogram
-                audio_path = path.join(dirpath, audio_file)         # TODO TODO TODO NB!!!
-                audio_path = "input_data\\split\\dz_20120206_000000.wav"          # 8kHz 24h file
+                audio_path = path.join(dirpath, audio_file)
+                # audio_path = "input_data\\split\\dz_20120206_000000.wav"          # 8kHz 24h file
                 # audio_path = "input_data\\split\\kp16_20150416_000000.wav"            # 4kHz 24h file
                 # audio_path = "input_data\\split\\tree3_20180517_095900.wav"          # 14h file
                 try:
@@ -162,7 +161,6 @@ if __name__ == '__main__':
                         idx_number = int(spect_idx/len_chunk)
                         print(f'size of spect_chunk = {spect_chunk.shape[0]}')
                         final_spec[idx_number*chunk_spec_dim: (idx_number+1)*chunk_spec_dim, :] += spect_chunk
-
 
                 final_spec = final_spec.T
 

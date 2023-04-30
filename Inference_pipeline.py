@@ -48,10 +48,37 @@ import os
 parser = argparse.ArgumentParser()
 
 
+def format_paths(spect_dir_path, spect_out_path, model_0_path, model_1_path, result_dir_path, spect_path_path):
+    relevant_paths = [spect_dir_path, spect_out_path, model_0_path, model_1_path, result_dir_path, spect_path_path]
+
+    for i, current_path in enumerate(relevant_paths):
+        if current_path is None:
+            continue
+        # Split the input path into its components
+        path_components = []
+        while True:
+            current_path, tail = os.path.split(current_path)
+            if tail:
+                path_components.insert(0, tail)
+            else:
+                if current_path:
+                    path_components.insert(0, current_path)
+                break
+        # Print the path components
+        print(path_components)
+        # Rejoin the path components into a path string
+        path = os.path.join(*path_components)
+        # Print the reassembled path
+        print(path)
+        relevant_paths[i] = path
+
+    return relevant_paths[0], relevant_paths[1], relevant_paths[2], relevant_paths[3], relevant_paths[4], relevant_paths[5]
+
+
 
 class Inferance_Pipeline(object):
     """docstring for Inferance_Pipeline"""
-    def __init__(self, data_flag, spect_dir, spect_out, make_predictions, model_0, model_1, spect_path=None):
+    def __init__(self, data_flag, spect_dir, spect_out, make_predictions, model_0, model_1, result_dir, spect_path=None):
         """
         @param data_flag: Boolean indicating whether to process the data
         @param spect_dir: The directory with the .wav files we want to convert to spectrograms
@@ -66,8 +93,11 @@ class Inferance_Pipeline(object):
 
         """
         super(Inferance_Pipeline, self).__init__()
+
+        # First we should make sure all paths are correctly formatted
+        spect_dir, spect_out, model_0, model_1, result_dir, spect_path = format_paths(spect_dir, spect_out, model_0, model_1, result_dir, spect_path)
         
-        # First we should write a method that checks the necessary flag configuration!
+        # Then we should write a method that checks the necessary flag configuration!
 
         # Process the spectograms
         if data_flag:
@@ -81,10 +111,11 @@ class Inferance_Pipeline(object):
         # is the 'spect_out' folder. 
         if spect_path is None:
             # We need to strip off the final directory that gets created for the spectrograms
-            dirs = spect_dir.split("/")
+            spect_dir_head, spect_dir_tail = os.path.split(spect_dir)
+            # dirs = spect_dir.split("/")
             # Watch the case where the dir that we want is protected as stuff/dir/
-            final_dir = dirs[-2] if dirs[-1] == "" else dirs[-1]
-            spect_path = os.path.join(spect_out, final_dir)
+            # final_dir = dirs[-2] if dirs[-1] == "" else dirs[-1]
+            spect_path = os.path.join(spect_out, spect_dir_tail)
 
         if make_predictions:
             # 1) First run the prediction model. Output predictions to a new folder './Predictions.'
@@ -145,6 +176,9 @@ if __name__ == '__main__':
         help='The directory where the spectrogram .npy files exist. This will be the same directory as' \
         + ' spect_out/data_dir" if the data was generated with this script. If this is None than we' \
         + ' assume that this directory is "spect_out/data_dir"')
+    parser.add_argument('--result_dir', type=str, default="./Results",
+                        help='Path to the Results from generating predictions, if not specified will default to ??')        # TODO what is default?
+
 
     args = parser.parse_args();
 
@@ -155,6 +189,7 @@ if __name__ == '__main__':
                         make_predictions= args.make_predictions,
                         model_0=args.model_0,
                         model_1=args.model_1,
+                        result_dir=args.result_dir,
                         spect_path=args.spect_path
                         )
 
