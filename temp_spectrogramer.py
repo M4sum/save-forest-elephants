@@ -141,18 +141,22 @@ if __name__ == '__main__':
                                                                      raw_audio[start_chunk:]), axis=0)
 
                 chunk_spec_dim = 154
+                # num_chunks = np.ceil((raw_audio.shape[0] - len_chunk) / (len_chunk - NFFT + hop)) + 1
+                # final_spec = np.zeros(spectrum.shape[0], num_chunks * chunk_size)
+                # total number of windows in sliding window: np.ceil((total_length - window_size) / hop_size) -1
                 final_spec = np.zeros(((i+1)*chunk_spec_dim, 1000))      # TODO fix this shape i*whatever gets returned per chunk of spect # spect_chunk.shape = (154,1000)
                 processes = []
                 start_chunk = 0
                 i = 0
                 with ProcessPoolExecutor() as executor:
-                    for audio_idx in range(0, audio_concat_chunks_for_spectogram.shape[0], len_chunk):
+                    for audio_idx in range(0, raw_audio.shape[0], len_chunk - NFFT + hop):
                         print(f'Chunk number {audio_idx}: {data_id}')
                         # pdb.set_trace()
-                        audio_slice = audio_concat_chunks_for_spectogram[start_chunk: start_chunk + len_chunk]
-                        start_chunk += len_chunk - NFFT + hop
+                        audio_slice = audio_concat_chunks_for_spectogram[audio_idx: audio_idx + len_chunk]
+                        # start_chunk += len_chunk - NFFT + hop
                         processes.append(executor.submit(audio_slice_to_spectogram, audio_slice, audio_idx,
                                                          NFFT, samplerate, NFFT-hop, pad_to, max_freq))
+
 
                     # wait for all processes to finish and collect spectrogram chunks
                     for process in as_completed(processes):

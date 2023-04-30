@@ -18,7 +18,7 @@ Update this file!!
 This file is just temporary to generate spectrograms without labels for testing on 
 Peter's new data! Assumes we only want to process .wav files.
 
-Let us also create a file at the end with all of the specs createdddd
+Let us also create a file at the end with all of the specs create
 """
 
 if __name__ == '__main__':
