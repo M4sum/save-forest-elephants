@@ -1,4 +1,4 @@
-import generate_spectrograms
+import generate_spectrograms_compare_time
 import argparse
 import numpy as np
 from scipy.io import wavfile
@@ -10,7 +10,7 @@ import miniaudio
 import resampy
 import soundfile as sf
 
-TARGET_SR = 8000
+TARGET_SR = 4000
 
 
 """
@@ -58,7 +58,7 @@ if __name__ == '__main__':
         files_dirs = currentDir.split('/')
         file_dir_name = files_dirs[-2] if files_dirs[-1] == '' else files_dirs[-1]
         # Create the output directory
-        spect_dir = path.join(outputDir, file_dir_name)
+        spect_dir = path.join(outputDir, 'split')
         if not path.exists(spect_dir):
             os.mkdir(spect_dir)
 
@@ -76,8 +76,8 @@ if __name__ == '__main__':
 
                 # We need to read the audio file so that we can use generate_spectrogram
                 audio_path = path.join(dirpath, audio_file)
-                audio_path = "input_data\\split\\dz_20120206_000000.wav"          # 8kHz file
-                # audio_path = "input_data\\split\\kp16_20150416_000000.wav"            # 4kHz file
+                # audio_path = "input_data\\split\\dz_20120206_000000.wav"          # 8kHz file
+                audio_path = "input_data\\split\\kp16_20150416_000000.wav"            # 4kHz file
                 try:
                     time_start_load_file = time()
                     # raw_audio_librosa, samplerate_librosa = librosa.load(audio_path, sr=TARGET_SR, mono=True)
@@ -154,7 +154,7 @@ if __name__ == '__main__':
 
                 spectrogram_info['samplerate'] = samplerate
                 start_time = time()
-                spectrogram = generate_spectrograms.generate_spectogram(raw_audio, spectrogram_info, data_id)
+                spectrogram = generate_spectrograms_compare_time.generate_spectogram(raw_audio, spectrogram_info, data_id)
                 end_time = time()
                 print(f'Spectrogram generation for one file took {end_time - start_time} seconds')
 

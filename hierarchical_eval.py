@@ -1415,6 +1415,6 @@ if __name__ == '__main__':
         if not os.path.isdir(save_path):
             os.mkdir(save_path)
         # Save the predictions
-        create_predictions_csv(full_dataset, predictions, save_path
-    
-    print(f"Time taken to run inference and save results: {time.time() - start}")
+        create_predictions_csv(full_dataset, predictions, save_path)
+
+    print(f'Time taken to run inference and save results= {time.time() - start}')

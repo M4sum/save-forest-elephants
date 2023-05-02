@@ -115,57 +115,46 @@ if __name__ == '__main__':
                 # spectrogram = generate_spectrograms.generate_spectogram(raw_audio, spectrogram_info, data_id)     # Replace this with spectogram generation that is parallelized
                 start_time = time()
 
-                chunk_size = 1000
-                len_chunk = (chunk_size - 1) * hop + NFFT
-                start_chunk = 0
-                audio_concat_chunks_for_spectogram = None
-                i = 0
-
                 # divide the audio into equal parts, each part will be processed in a separate process
                 # Remember that we want to start as if we are doing one continuous sliding window
-                # So first generate concatenated array to process easier
-                # Can this while be done as part of the for loop below?
-                print(f'raw_audio.shape[0] = {raw_audio.shape[0]}')
-                while start_chunk + len_chunk < raw_audio.shape[0]:
-                    if i == 0:
-                        audio_concat_chunks_for_spectogram = raw_audio[start_chunk:start_chunk+len_chunk]
-                    else:
-                        audio_concat_chunks_for_spectogram = np.concatenate((audio_concat_chunks_for_spectogram,
-                                                                             raw_audio[start_chunk:start_chunk +
-                                                                                                   len_chunk]), axis=0)
-                    print(f'{i}th chunk concat loop')
-                    i += 1
-                    start_chunk += len_chunk - NFFT + hop
-                # Do one final chunk for whatever remains at the end
-                audio_concat_chunks_for_spectogram = np.concatenate((audio_concat_chunks_for_spectogram,
-                                                                     raw_audio[start_chunk:]), axis=0)
-
-                chunk_spec_dim = 154
-                # num_chunks = np.ceil((raw_audio.shape[0] - len_chunk) / (len_chunk - NFFT + hop)) + 1
-                # final_spec = np.zeros(spectrum.shape[0], num_chunks * chunk_size)
+                chunk_size = 1000
+                len_chunk = (chunk_size - 1) * hop + NFFT
+                # Calculate number of chunks i.e ((total_length - window_size) / jump_size) +1
+                # num_chunks = np.ceil((raw_audio.shape[0] - len_chunk) / (len_chunk - NFFT + hop)) #+ 1
+                num_chunks = np.ceil((raw_audio.shape[0]) / (len_chunk - NFFT + hop))
                 # total number of windows in sliding window: np.ceil((total_length - window_size) / hop_size) -1
-                final_spec = np.zeros(((i+1)*chunk_spec_dim, 1000))      # TODO fix this shape i*whatever gets returned per chunk of spect # spect_chunk.shape = (154,1000)
                 processes = []
-                start_chunk = 0
-                i = 0
                 with ProcessPoolExecutor() as executor:
                     for audio_idx in range(0, raw_audio.shape[0], len_chunk - NFFT + hop):
                         print(f'Chunk number {audio_idx}: {data_id}')
                         # pdb.set_trace()
-                        audio_slice = audio_concat_chunks_for_spectogram[audio_idx: audio_idx + len_chunk]
-                        # start_chunk += len_chunk - NFFT + hop
+                        audio_slice = raw_audio[audio_idx: audio_idx + len_chunk]
                         processes.append(executor.submit(audio_slice_to_spectogram, audio_slice, audio_idx,
                                                          NFFT, samplerate, NFFT-hop, pad_to, max_freq))
 
-
                     # wait for all processes to finish and collect spectrogram chunks
+                    i = 0
+                    final_spec = None
+                    process_spec = None
+                    first_chunk = None
+                    last_chunk = None
                     for process in as_completed(processes):
                         # pdb.set_trace()
                         spect_chunk, spect_idx = process.result()
-                        idx_number = int(spect_idx/len_chunk)
-                        print(f'size of spect_chunk = {spect_chunk.shape[0]}')
-                        final_spec[idx_number*chunk_spec_dim: (idx_number+1)*chunk_spec_dim, :] += spect_chunk
+                        idx_number = int(spect_idx/len_chunk)       # results not returned in correct order so need to use this
+                        if i == 0:
+                            first_chunk = spect_chunk
+                            process_spec = np.zeros((spect_chunk.shape[0], int(num_chunks * chunk_size)))
+                        # print(f'size of spect_chunk = {spect_chunk.shape[0]}')
+                        if spect_chunk.shape[1] != first_chunk.shape[1]:
+                            last_chunk = spect_chunk
+                            process_spec[:, idx_number * chunk_size:(idx_number * chunk_size) + last_chunk.shape[1]] = spect_chunk
+                        else:
+                            process_spec[:, idx_number * chunk_size:(idx_number + 1) * chunk_size] = spect_chunk
+                        i +=1
+                        # final_spec[idx_number*chunk_spec_dim: (idx_number+1)*chunk_spec_dim, :] += spect_chunk
 
+                final_spec = np.zeros((spect_chunk.shape[0], int(((num_chunks-1) * chunk_size) + last_chunk.shape[1])))
                 final_spec = final_spec.T
 
                 print("Finished making one 24 hour spectogram")
