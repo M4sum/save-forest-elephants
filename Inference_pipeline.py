@@ -43,6 +43,7 @@ import argparse
 import subprocess
 import sys
 import os
+import time
 
 parser = argparse.ArgumentParser()
 
@@ -115,6 +116,7 @@ class Inferance_Pipeline(object):
 
 # ---------------- Main -------------
 if __name__ == '__main__':
+    s = time.time()
     parser = argparse.ArgumentParser(prog=os.path.basename(sys.argv[0]),
                                      formatter_class=argparse.RawTextHelpFormatter,
                                      description="Create noise gated wav files from input wav files."
@@ -155,5 +157,7 @@ if __name__ == '__main__':
                         model_1=args.model_1,
                         spect_path=args.spect_path
                         )
+    
+    print(f"Total time for entire code: {time.time()-s}")
 
         

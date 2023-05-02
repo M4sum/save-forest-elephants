@@ -134,7 +134,7 @@ def process_spectogram(audio_file, label_file, spectrogram_info, data_id):
         samplerate, raw_audio = wavfile.read(audio_file)
         if (samplerate < 4000):
             print ("Sample Rate Unexpectadly low!", samplerate)
-        print ("File size", raw_audio.shape)
+        print ("Audio file size", raw_audio.shape)
     except:
         print("FILE Failed", audio_file)
         # Let us try this for now to see if it stops the failing

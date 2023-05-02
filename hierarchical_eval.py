@@ -844,7 +844,7 @@ def eval_full_spectrograms(dataset, model_id, predictions_path, pred_threshold=0
 
         # Use the calls as defined in the orginal hand labeled file.
         # This looks to avoid issues of overlapping calls seeming like
-        # single very large calls in the gt labeling 
+        # single very large calls in the gt labeling
         if use_call_bounds:
             print ("Using CSV file with ground truth call start and end times")
             gt_calls = process_ground_truth(gt_call_path, in_seconds=in_seconds)
@@ -971,6 +971,8 @@ def extract_call_predictions(dataset, model_id, predictions_path, pred_threshold
         last_tag = tags[-1]
         data_id = last_tag[:-7]
         print ("Generating Prediction for:", data_id)
+
+        # pdb.set_trace()
         
         predictions = np.load(predictions_path + '/' + model_id + "/" + data_id + '.npy')
 
@@ -989,7 +991,7 @@ def extract_call_predictions(dataset, model_id, predictions_path, pred_threshold
         
         results[data_id] = predicted_calls
        
-    return results
+    return results, smoothed_predictions
 
 
        
@@ -1040,7 +1042,7 @@ def visualize_elephant_call_metric(dataset, results, hierarchical_model=True):
         visualize_predictions(results[data_id]['true_pos_recall'], spectrogram, model_predictions, labels, 
                                 label="True Positive Recall", times=times)
 
-def create_predictions_csv(dataset, predictions, save_path, in_seconds=False):
+def create_predictions_csv(dataset, binary_predictions, predictions, save_path, in_seconds=False):
     """
         For each 24hr test file, output the model predictions
         in the form of the ground truth label files
@@ -1086,7 +1088,7 @@ def create_predictions_csv(dataset, predictions, save_path, in_seconds=False):
 
             # Output the individual predictions
             i = 1
-            for prediction in predictions[data_id]:
+            for prediction in binary_predictions[data_id]:
                 # Get the time in seconds
                 if in_seconds:
                     pred_start, pred_end, length = prediction
@@ -1244,7 +1246,6 @@ if __name__ == '__main__':
     #         Aggregate results for chunks to get one file’s ouput
     #         Extract_call_predictions
     #         Save calls
-
     if args.make_full_preds:
         for data in full_dataset:
             spectrogram = data[0]
@@ -1272,13 +1273,13 @@ if __name__ == '__main__':
                 spectrogram = (spectrogram - np.mean(spectrogram)) / np.std(spectrogram)
                 # spectrogram = torch.from_numpy(spectrogram).float()
 
-                print(f"Number of cpus: {cpu_count()}")
-
                 # create a pool with the number of available cores
                 # pool = Pool(cpu_count())
 
                 # divide the spectrogram into equal parts, each part will be processed in a separate process
+                parameters.device = "cpu"
                 if parameters.device == "cpu":
+                    print(f"Number of cpus: {cpu_count()}")
                     with ProcessPoolExecutor() as executor:
                         s = time.time()
                         for spect_idx in range(0, spectrogram.shape[1], jump_size):
@@ -1346,10 +1347,7 @@ if __name__ == '__main__':
                 predictions = sigmoid(predictions)
 
                 if model_1 is not None:
-                    hierarchical_predictions = sigmoid(hierarchical_predictions)
-                
-                    end = time.time()
-                    print("total time taken this loop: ", end - start)                
+                    hierarchical_predictions = sigmoid(hierarchical_predictions)                
                 
                 save_predictions(model_id, f'{data_id}_spec', model_1, hierarchical_predictions, predictions, args.predictions_path)
 
@@ -1408,13 +1406,13 @@ if __name__ == '__main__':
                                                 min_call_length=parameters.MIN_CALL_LENGTH)
     elif args.save_calls:
         # pdb.set_trace()
-        predictions = extract_call_predictions(full_dataset, model_id, args.predictions_path, 
+        binary_predictions, predictions= extract_call_predictions(full_dataset, model_id, args.predictions_path, 
                     min_call_length=parameters.MIN_CALL_LENGTH, pred_threshold=parameters.EVAL_THRESHOLD)
         # Save for now to a folder determined by the model id
         save_path = args.call_predictions_path + '/' + model_id
         if not os.path.isdir(save_path):
             os.mkdir(save_path)
         # Save the predictions
-        create_predictions_csv(full_dataset, predictions, save_path
+        create_predictions_csv(full_dataset, binary_predictions, predictions, save_path)
     
     print(f"Time taken to run inference and save results: {time.time() - start}")
