@@ -845,7 +845,7 @@ def extract_call_predictions(dataset, model_id, predictions_path, pred_threshold
         data_id = last_tag[:-7]
         print ("Generating Prediction for:", data_id)
 
-        pdb.set_trace()
+        # pdb.set_trace()
         
         predictions = np.load(predictions_path + '/' + model_id + "/" + data_id + '.npy')
 
@@ -1086,7 +1086,6 @@ if __name__ == '__main__':
     full_dataset = ElephantDatasetFull(full_test_spect_paths['spec'],
                 full_test_spect_paths['label'], full_test_spect_paths['gt'], only_preds=args.only_predictions)
     
-    args.make_full_preds = False
     if args.make_full_preds:
         for data in full_dataset:
             spectrogram = data[0]

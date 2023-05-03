@@ -8,3 +8,4 @@ profile.json
 __pycache__/
 result.json
 src/
+profile.html
