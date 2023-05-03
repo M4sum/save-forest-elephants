@@ -1268,6 +1268,7 @@ if __name__ == '__main__':
                 overlap_counts = np.zeros(spectrogram.shape[0])
 
                 processes = []
+                # pdb.set_trace()
                 spectrogram = np.expand_dims(spectrogram,axis=0)
                 spectrogram = (spectrogram - np.mean(spectrogram)) / np.std(spectrogram)
                 # spectrogram = torch.from_numpy(spectrogram).float()
@@ -1282,10 +1283,12 @@ if __name__ == '__main__':
                     with ProcessPoolExecutor() as executor:
                         s = time.time()
                         for spect_idx in range(0, spectrogram.shape[1], jump_size):
+
                             last_chunk_flag = False
-                            if (spect_idx - jump_size + chunk_size != spectrogram.shape[1]):
+                            if (spect_idx + chunk_size > spectrogram.shape[1]):
                                 last_chunk_flag = True
-                            # pdb.set_trace()
+
+                            # spect_slice = spectrogram[spect_idx:spect_idx + chunk_size, :]
                             spect_slice = spectrogram[:, spect_idx:spect_idx + chunk_size, :]
                             processes.append(executor.submit(process_slice, spect_slice, model_0, 
                                                                 model_1, hierarchy_threshold, 

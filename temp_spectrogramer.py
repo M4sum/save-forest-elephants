@@ -13,7 +13,7 @@ from multiprocessing import Pool, cpu_count
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from matplotlib import mlab as ml
 
-TARGET_SR = 4000
+TARGET_SR = 8000
 
 """
 Update this file!!
@@ -99,7 +99,7 @@ if __name__ == '__main__':
                 try:
                     time_start_load_file = time()
                     raw_audio, samplerate = librosa.load(audio_path, sr=TARGET_SR, mono=True)
-                    if (samplerate != 4000):
+                    if (samplerate != 8000):
                         print("Sample Rate Error!", samplerate)
                     print("File size", raw_audio.shape)
                     print(f'samplerate = {samplerate}')
