@@ -6,8 +6,8 @@ from os import path
 import os
 from time import time
 import librosa
-import miniaudio
-import resampy
+# import miniaudio
+# import resampy
 import soundfile as sf
 
 TARGET_SR = 4000

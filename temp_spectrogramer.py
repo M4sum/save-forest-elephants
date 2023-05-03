@@ -6,8 +6,8 @@ from os import path
 import os
 from time import time
 import librosa
-import miniaudio
-import resampy
+# import miniaudio
+# import resampy
 import soundfile as sf
 from multiprocessing import Pool, cpu_count
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
