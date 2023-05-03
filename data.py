@@ -623,95 +623,6 @@ class SpectrogramDataset(Dataset):
         slice = slice.to(parameters.device)
         return slice, index, self.file_idx
 
-    # async def __getitem__(self, idx):
-    #     """
-    #     This method returns an item form dataloader when dataloader is enumerated to do processes.
-    #     Think about what should be passed in to return a batch of spectrogram chunks, and how to return that.
-    #     Also think about loading chunks from different files.
-    #     """
-
-    #     # pdb.set_trace()
-    #     # file_num_chunks = int(np.ceil((np.load(self.spectrogram_file_paths[self.file_idx]).shape[0] - self.chunk_size)/self.jump_size) + 1)
-
-    #     # if idx >= file_num_chunks:
-    #     #     self.file_idx +=1
-    #     # while idx >= (np.load(self.spectrogram_file_paths[file_idx]).shape[0] - self.chunk_size) + 1:
-    #     #     idx -= (np.load(self.spectrogram_file_paths[file_idx]).shape[0] - self.chunk_size) + 1
-    #     #     file_idx += 1
-
-    #     loaded_data = {}
-    #     tasks = []
-
-    #     start = idx
-    #     end = idx + self.chunk_size
-
-
-    #     for i, file_path in enumerate(self.spectrogram_file_paths):
-    #         task = asyncio.create_task(load_spectrograms(file_path, i))
-    #         tasks.append(task)
-
-    #     for tasks in task:
-    #         spectrogram, file_id = await task
-
-    #         if start >= spectrogram.shape[0]:
-    #             self.file_idx +=1
-    #             start -= spectrogram.shape[0]
-    #             end -= spectrogram.shape[0]
-
-    #         chunk = spectrogram[start:end, :]
-    #     return (chunk, self.file_idx, idx)
-
-
-
-
-    
-    # def _get_spectrogram_paths(test_files_path, spectrogram_path):
-    #     """
-    #         In the test set folder, there is a file that includes
-    #         all of the recording files used for the test set. Based
-    #         on these files we want to get the spectrograms and gt
-    #         labeling files that correspond
-    #     Args:
-    #     test_files_path (str): Path to the text file with audio file names
-
-    #     Returns:
-    #         None
-    #     """
-
-    #     # Holds the paths to the:
-    #     # - spectrograms
-    #     # - labels for each spectrogram slice
-    #     # - gt (start, end) times for calls
-    #     paths = {'specs': [],
-    #             'labels': [],
-    #             'gts': []}
-    #     # pdb.set_trace()
-    #     with open(test_files_path, 'r') as f:
-    #         lines = f.readlines()
-
-    #     files = [x.strip() for x in lines]
-
-    #     # Create the spectrogram path by concatenating the test file with the path to the folder
-    #     # containing the spectrogram files
-    #     for file in files:
-    #         paths['specs'].append(spectrogram_path + '/' + file + '_spec.npy')
-    #         paths['labels'].append(spectrogram_path + '/' + file + '_label.npy')
-    #         paths['gts'].append(spectrogram_path + '/' + file + '_gt.txt')             
-
-    #     return paths
-
-# spectrogram_dir = '/path/to/spectrogram/files'  # directory containing spectrogram files
-# chunk_size = 256  # example chunk size
-
-# spectrogram_file_paths = [os.path.join(spectrogram_dir, f) for f in os.listdir(spectrogram_dir) 
-#                      if f.endswith('.npy')]
-
-# dataset = SpectrogramDataset(spectrogram_file_paths, chunk_size)
-# dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
-
-
-
-
 
 """
     Dataset for full test length audio
@@ -722,7 +633,6 @@ class ElephantDatasetFull(data.Dataset):
                     scale=True, only_preds=False):
 
         self.specs = spectrogram_files
-        # Note there may not actually be files associated with these files
         self.labels = label_files
         self.gt_calls = gt_calls # This is the .txt file that contains start and end times of calls
         self.preprocess = preprocess
@@ -731,54 +641,13 @@ class ElephantDatasetFull(data.Dataset):
         
         print('Normalizing with {} and scaling {}'.format(preprocess, scale))
 
-
     def __len__(self):
         return len(self.specs)
-
 
     def transform(self, spectrogram): # We need to fix this probably!!!
         # Potentially include other transforms
         if self.scale:
             spectrogram = 10 * np.log10(spectrogram)
-
-        # Quite janky, but for now we will do the normalization 
-        # seperately!
-        '''
-        # Normalize Features
-        if self.preprocess == "norm": # Only have one training example so is essentially chunk norm
-            spectrogram = (spectrogram - np.mean(spectrogram)) / np.std(spectrogram)
-        elif preprocess == "Scale":
-            scaler = MinMaxScaler()
-            # Scale features for each training example
-            # to be within a certain range. Preserves the
-            # relative distribution of each feature. Here
-            # each feature is the different frequency band
-            spectrogram = scaler.fit_transform(spectrogram.astype(np.float32))
-        elif self.preprocess == "ChunkNorm":
-            spectrogram = (spectrogram - np.mean(spectrogram)) / np.std(spectrogram)
-        elif self.preprocess == "BackgroundS":
-            # Load in the pre-calculated mean,std,etc.
-            if not scale:
-                mean_noise = np.load(Noise_Stats_Directory + "mean.npy")
-                std_noise = np.load(Noise_Stats_Directory + "std.npy")
-            else:
-                mean_noise = np.load(Noise_Stats_Directory + "mean_log.npy")
-                std_noise = np.load(Noise_Stats_Directory + "std_log.npy")
-
-            spectrogram = (spectrogram - mean_noise) / std_noise
-        elif self.preprocess == "BackgroundM":
-            # Load in the pre-calculated mean,std,etc.
-            if not scale:
-                mean_noise = np.load(Noise_Stats_Directory + "mean.npy")
-                median_noise = np.load(Noise_Stats_Directory + "median.npy")
-            else:
-                mean_noise = np.load(Noise_Stats_Directory + "mean_log.npy")
-                median_noise = np.load(Noise_Stats_Directory + "median_log.npy")
-
-            spectrogram = (spectrogram - mean_noise) / median_noise
-        elif self.preprocess == "FeatureNorm":
-            spectrogram = (spectrogram - np.mean(spectrogram, axis=1)) / np.std(spectrogram, axis=1)
-        '''
         return spectrogram
 
     """
@@ -801,60 +670,3 @@ class ElephantDatasetFull(data.Dataset):
             return spectrogram, None, gt_call_path
         else:   
             return spectrogram, label, gt_call_path
-        
-
-#### miniaudio example from estine
-
-# from time import time
-# from scipy.io import wavfile
-# import numpy as np
-# import miniaudio
-
-# audio_path = "C:\\Users\\estin\\PycharmProjects\\ElephantsDetector\\test_EC\\data\\nn09a_20201025_120105.wav"
-# ##### What stanford has done
-# start_time_audio_read = time()
-
-# # reads wav file.
-# samplerate, raw_audio = wavfile.read(audio_path)
-# if (samplerate < 4000):
-#      print ("Sample Rate Unexpectadly low!", samplerate)
-# print ("File size", raw_audio.shape)
-# end_time_audio_read = time()
-# #timing_audio_read = np.round(end_time_audio_read - start_time_audio_read, 4)
-# timing_audio_read = np.round(end_time_audio_read - start_time_audio_read, 10)
-# print(f'READING WAV FILE IS TAKING {timing_audio_read} seconds')
-# duration = float(raw_audio.size / samplerate)
-# print(f'audio file is {duration} seconds long')
-
-
-# #audio_path = "my_audio_file.mp3"
-# target_sampling_rate = 8000  #the input audio will be resampled a this sampling rate 44100
-# n_channels = 1  #either 1 or 2
-# waveform_duration = 10 #in seconds 30
-# offset = 10 #this means that we read only in the interval [15s, duration of file] 15
-
-# ''''
-# function stream_file (filename: str, output_format: miniaudio.SampleFormat = <SampleFormat.SIGNED16: 2>, 
-# nchannels: int = 2, sample_rate: int = 44100, frames_to_read: int = 1024, 
-# dither: miniaudio.DitherMode = <DitherMode.NONE: 0>, seek_frame: int = 0) 
-# -> Generator[array.array, int, NoneType]
-# '''
-
-# start_time_audio_read_stream = time()
-# waveform_generator = miniaudio.stream_file(
-#      filename = audio_path,
-#      sample_rate = target_sampling_rate,
-#      seek_frame = 0,       #seek_frame = int(offset * target_sampling_rate),
-#      frames_to_read = int(waveform_duration * target_sampling_rate),
-#      output_format = miniaudio.SampleFormat.SIGNED16,          #miniaudio.SampleFormat.FLOAT32,
-#      nchannels = n_channels)
-
-
-# for i, waveform in enumerate(waveform_generator):
-#     #do something with the waveform....
-#     print(f'{i}th waveform size = {len(waveform)}')
-#     # we can pass i and waveform to separate thread/subprocess to generate spectrograms of that section
-
-# end_time_audio_read_stream = time()
-# timing_audio_read_stream = np.round(end_time_audio_read_stream - start_time_audio_read_stream, 10)
-# print(f'READING WAV FILE AS STREAM AND DISTRIBUTING CHUNKS IS TAKING {timing_audio_read_stream} seconds')

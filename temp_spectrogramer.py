@@ -64,7 +64,7 @@ if __name__ == '__main__':
                 data_id = tags[0]
                 file_type = tags[1]
 
-                if (file_type not in ['wav']):
+                if (file_type not in ['wav']): 
                     continue
 
                 # We need to read the audio file so that we can use generate_spectrogram
