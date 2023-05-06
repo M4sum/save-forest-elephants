@@ -6,6 +6,32 @@ import sklearn
 from sklearn.metrics import f1_score, precision_recall_fscore_support
 import os
 
+def format_paths(spect_dir_path, spect_out_path, model_0_path, model_1_path, result_dir_path, spect_path_path):
+    relevant_paths = [spect_dir_path, spect_out_path, model_0_path, model_1_path, result_dir_path, spect_path_path]
+
+    for i, current_path in enumerate(relevant_paths):
+        if current_path is None:
+            continue
+        # Split the input path into its components
+        path_components = []
+        while True:
+            current_path, tail = os.path.split(current_path)
+            if tail:
+                path_components.insert(0, tail)
+            else:
+                if current_path:
+                    path_components.insert(0, current_path)
+                break
+        # Print the path components
+        print(path_components)
+        # Rejoin the path components into a path string
+        path = os.path.join(*path_components)
+        # Print the reassembled path
+        print(path)
+        relevant_paths[i] = path
+
+    return relevant_paths[0], relevant_paths[1], relevant_paths[2], relevant_paths[3], relevant_paths[4], relevant_paths[5]
+
 def set_seed(seed):
     """
         Set the seed across all different necessary platforms

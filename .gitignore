@@ -9,3 +9,5 @@ __pycache__/
 result.json
 src/
 profile.html
+Call_Predictions/
+.DS_Store

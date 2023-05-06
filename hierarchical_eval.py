@@ -135,12 +135,12 @@ def spect_call_to_time(call, NFFT=4096, hop=800):
         (spect start, spect end, length), convert
         the spectrogram frames to time in seconds
     """
-    begin, end, length = call
+    begin, end, avg_prediction_prob = call
     begin_s = spect_frame_to_time(begin)
     end_s = spect_frame_to_time(end)
     length_s = begin_s - end_s
 
-    return (begin_s, end_s, length_s)
+    return (begin_s, end_s, length_s, avg_prediction_prob)
 
 # NEED TO WORK ON THIS!
 def multi_class_predict_spec_sliding_window(spectrogram, model, chunk_size=256, jump=128, hierarchical_model=None, hierarchy_threshold=15):
@@ -574,7 +574,7 @@ def process_ground_truth(label_path, in_seconds=False, samplerate=8000, NFFT=409
     return calls
 
 
-def find_elephant_calls(binary_preds, min_call_length=10, in_seconds=False, samplerate=8000., NFFT=4096., hop=800.): # Was 3208, 641
+def find_elephant_calls(binary_preds, predictions, min_call_length=10, in_seconds=False, samplerate=8000., NFFT=4096., hop=800.): # Was 3208, 641
     """
         Given a binary predictions vector, we now want
         to step through and locate all of the elephant
@@ -610,13 +610,15 @@ def find_elephant_calls(binary_preds, min_call_length=10, in_seconds=False, samp
             end += 1
 
         call_length = end - begin
+        # pdb.set_trace()
 
         # Found a predicted call!
         if (call_length >= min_call_length):
+            avg_prediction_prob = np.mean(predictions[begin: end])
             if not in_seconds:
                 # Note we subtract -1 to get the last frame 
                 # that has the actual call
-                calls.append((begin, end - 1, call_length))
+                calls.append((begin, end - 1, call_length, avg_prediction_prob))
             else:
                 # Frame k is centered around second
                 # (NFFT / sr / 2) + (k) * (hop / sr)
@@ -628,9 +630,9 @@ def find_elephant_calls(binary_preds, min_call_length=10, in_seconds=False, samp
                 #end_s = (end - 1) * (hop / samplerate) + (NFFT / samplerate)
                 # k frames spans ==> (NFFT / sr) + (k-1) * (hop / sr) seconds
                 #call_length_s = (NFFT / samplerate) + (call_length - 1) * (hop / samplerate)
-                begin_s, end_s, call_length_s = spect_call_to_time((begin, end-1, call_length))
+                begin_s, end_s, call_length_s, avg_prediction_prob = spect_call_to_time((begin, end-1, avg_prediction_prob))
 
-                calls.append((begin_s, end_s, call_length_s))
+                calls.append((begin_s, end_s, call_length_s, avg_prediction_prob))
         else: # zero out the too short predictions
             processed_preds[begin:end] = 0
 
@@ -846,29 +848,39 @@ def extract_call_predictions(dataset, model_id, predictions_path, pred_threshold
         print ("Generating Prediction for:", data_id)
 
         # pdb.set_trace()
-        
-        predictions = np.load(predictions_path + '/' + model_id + "/" + data_id + '.npy')
+        predictions = np.random.rand(860996,2)
+        # predictions = np.load(predictions_path + '/' + model_id + "/" + data_id + '.npy')
 
-        binary_preds, smoothed_predictions = get_binary_predictions(predictions, threshold=pred_threshold, smooth=smooth)
+        # When output array of model contains predictions for rumble and gunshot
+        if predictions.shape[1] == 2:
+            new_preds = np.split(predictions, [1], axis = 1)
+            binary_preds_gunshot, smoothed_preds_gunshot = get_binary_predictions(new_preds[0].squeeze(), threshold=pred_threshold, smooth=smooth)
+            binary_preds_rumble, smoothed_preds_rumble = get_binary_predictions(new_preds[1].squeeze(), threshold=pred_threshold, smooth=smooth)
+            predicted_calls_gunshot, processed_preds_gunshot = find_elephant_calls(binary_preds_gunshot, smoothed_preds_gunshot, min_call_length=min_call_length, in_seconds=in_seconds)
+            predicted_calls_rumble, processed_preds_rumble = find_elephant_calls(binary_preds_rumble, smoothed_preds_rumble, min_call_length=min_call_length, in_seconds=in_seconds)
+            # Visualize the predictions around the gt calls
+            if visualize: # This is not super important
+                visual_full_recall(spectrogram, smoothed_preds_gunshot, labels, processed_preds_gunshot)
+                visual_full_recall(spectrogram, smoothed_preds_rumble, labels, processed_preds_rumble)
+            results[data_id] = [predicted_calls_gunshot, predicted_calls_rumble]
+        else:
+            binary_preds, smoothed_predictions = get_binary_predictions(predictions, threshold=pred_threshold, smooth=smooth)
 
-        # Process the predictions to get predicted elephant calls
-        # Note that processed_preds zeros out predictions that are not long
-        # enough to be an elephant call
-        predicted_calls, processed_preds = find_elephant_calls(binary_preds, min_call_length=min_call_length, in_seconds=in_seconds)
-        print ("Num predicted calls", len(predicted_calls))
+            # Process the predictions to get predicted elephant calls
+            # Note that processed_preds zeros out predictions that are not long
+            # enough to be an elephant call
+            predicted_calls, processed_preds = find_elephant_calls(binary_preds, smoothed_predictions, min_call_length=min_call_length, in_seconds=in_seconds)
+            print ("Num predicted calls", len(predicted_calls))
 
-        # Visualize the predictions around the gt calls
-        if visualize: # This is not super important
-            visual_full_recall(spectrogram, smoothed_predictions, labels, processed_preds)       
-        
-        
-        results[data_id] = predicted_calls
-       
-    return results, smoothed_predictions
-
-
+            # Visualize the predictions around the gt calls
+            if visualize: # This is not super important
+                visual_full_recall(spectrogram, smoothed_predictions, labels, processed_preds)       
+            
+            
+            results[data_id] = predicted_calls
        
     return results
+
 
 def visualize_elephant_call_metric(dataset, results, hierarchical_model=True):
     for data in dataset:
@@ -915,7 +927,7 @@ def visualize_elephant_call_metric(dataset, results, hierarchical_model=True):
         visualize_predictions(results[data_id]['true_pos_recall'], spectrogram, model_predictions, labels, 
                                 label="True Positive Recall", times=times)
 
-def create_predictions_csv(dataset, binary_predictions, predictions, save_path, in_seconds=False):
+def create_predictions_csv(dataset, extracted_calls, save_path, in_seconds=False):
     """
         For each 24hr test file, output the model predictions
         in the form of the ground truth label files
@@ -936,7 +948,6 @@ def create_predictions_csv(dataset, binary_predictions, predictions, save_path, 
         data_id = last_tag[:-7]
         wav_file = data_id + ".wav"
         print ("Generating Prediction for:", data_id)
-
         # Read the gt file to extract the "begin path" data_field
         if labels is not None:
             gt_file = csv.DictReader(open(gt_call_path,'rt'), delimiter='\t')
@@ -948,34 +959,67 @@ def create_predictions_csv(dataset, binary_predictions, predictions, save_path, 
             begin_path = wav_file
 
         # Save preditions
-        with open(save_path + '/' + data_id + '.txt', 'w') as f:
-            # Create the hedding
-            f.write('Selection\tView\tChannel\tBegin Time (s)\tEnd Time (s)\tLow Freq (Hz)\tHigh Freq (Hz)\tBegin Path\tFile Offset (s)\tBegin File\tSite\thour\tfileDate\tdate(raven)\tTag 1\tTag 2\tnotes\tAnalyst\n')
+        if len(extracted_calls[data_id]) == 2:
+            save_path = os.path.join(save_path,data_id)
+            if not os.path.isdir(save_path):
+                os.mkdir(save_path)
+            with open(os.path.join(save_path, 'Gunshot.txt'), 'w') as f:
+                # Create the hedding
+                f.write('Selection\tView\tChannel\tBegin Time (s)\tEnd Time (s)\tAvg_gunshot_probability\tLow Freq (Hz)\tHigh Freq (Hz)\tBegin Path\tFile Offset (s)\tBegin File\tSite\thour\tfileDate\tdate(raven)\tTag 1\tTag 2\tnotes\tAnalyst\n')
 
-            # Get the site name
-            site_tags = data_id.split('_')
-            site = site_tags[0]
+                # Get the site name
+                site_tags = data_id.split('_')
+                site = site_tags[0]
 
-            # File_offset
-            time_offset = int(site_tags[-1])
+                # File_offset
+                time_offset = int(site_tags[-1])
 
-            # Output the individual predictions
-            i = 1
-            for prediction in binary_predictions[data_id]:
-                # Get the time in seconds
-                if in_seconds:
-                    pred_start, pred_end, length = prediction
-                else:
-                    # This is unused for now!
-                    pred_start, pred_end, length = spect_call_to_time(prediction)
-                
-                # Convert to hours and minutes as well
-                Hs = math.floor(pred_start / 3600.)
+                # Output the individual predictions
+                i = 1
+                # pdb.set_trace()
+                for prediction in extracted_calls[data_id][0]:
+                    # Get the time in seconds
+                    pred_start, pred_end, length, prediction_prob = prediction
+                    if not in_seconds:
+                        # This is unused for now!
+                        pred_start, pred_end, cal_length_s, prediction_prob = spect_call_to_time((pred_start, pred_end, prediction_prob))
+                    
+                    # Convert to hours and minutes as well
+                    Hs = math.floor(pred_start / 3600.)
 
-                file_offset = pred_start
+                    file_offset = pred_start
 
-                f.write('{}\tSpectrogram 1\t1\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t\t\t\t\t\t{}\n'.format(i, pred_start, pred_end, dummy_low_freq, dummy_high_freq, begin_path, file_offset, wav_file, site, Hs, "AI"))
-                i += 1
+                    f.write('{}\tSpectrogram 1\t1\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t\t\t\t\t\t{}\n'.format(i, pred_start, pred_end, prediction_prob, dummy_low_freq, dummy_high_freq, begin_path, file_offset, wav_file, site, Hs, "AI"))
+                    i += 1
+
+            with open(os.path.join(save_path, 'Rumble.txt'), 'w') as f:
+                # Create the hedding
+                f.write('Selection\tView\tChannel\tBegin Time (s)\tEnd Time (s)\tAvg_rumble_probability\tLow Freq (Hz)\tHigh Freq (Hz)\tBegin Path\tFile Offset (s)\tBegin File\tSite\thour\tfileDate\tdate(raven)\tTag 1\tTag 2\tnotes\tAnalyst\n')
+
+                # Get the site name
+                site_tags = data_id.split('_')
+                site = site_tags[0]
+
+                # File_offset
+                time_offset = int(site_tags[-1])
+
+                # Output the individual predictions
+                i = 1
+                # pdb.set_trace()
+                for prediction in extracted_calls[data_id][1]:
+                    # Get the time in seconds
+                    pred_start, pred_end, length, prediction_prob = prediction
+                    if not in_seconds:
+                        # This is unused for now!
+                        pred_start, pred_end, cal_length_s, prediction_prob = spect_call_to_time((pred_start, pred_end, prediction_prob))
+                    
+                    # Convert to hours and minutes as well
+                    Hs = math.floor(pred_start / 3600.)
+
+                    file_offset = pred_start
+
+                    f.write('{}\tSpectrogram 1\t1\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t\t\t\t\t\t{}\n'.format(i, pred_start, pred_end, prediction_prob, dummy_low_freq, dummy_high_freq, begin_path, file_offset, wav_file, site, Hs, "AI"))
+                    i += 1
 
 
 def get_spectrogram_paths(test_files_path, spectrogram_path):
@@ -1085,7 +1129,7 @@ if __name__ == '__main__':
     # Include flag indicating if we are just making predictions with no labels
     full_dataset = ElephantDatasetFull(full_test_spect_paths['spec'],
                 full_test_spect_paths['label'], full_test_spect_paths['gt'], only_preds=args.only_predictions)
-    
+    args.make_full_preds = False
     if args.make_full_preds:
         for data in full_dataset:
             spectrogram = data[0]
@@ -1249,13 +1293,13 @@ if __name__ == '__main__':
                                                 min_call_length=parameters.MIN_CALL_LENGTH)
     elif args.save_calls:
         # pdb.set_trace()
-        binary_predictions, predictions= extract_call_predictions(full_dataset, model_id, args.predictions_path, 
+        extracted_calls = extract_call_predictions(full_dataset, model_id, args.predictions_path, 
                     min_call_length=parameters.MIN_CALL_LENGTH, pred_threshold=parameters.EVAL_THRESHOLD)
         # Save for now to a folder determined by the model id
-        save_path = args.call_predictions_path + '/' + model_id
+        save_path = os.path.join(args.call_predictions_path, model_id)
         if not os.path.isdir(save_path):
             os.mkdir(save_path)
         # Save the predictions
-        create_predictions_csv(full_dataset, binary_predictions, predictions, save_path)
+        create_predictions_csv(full_dataset, extracted_calls, save_path)
     
     print(f"Time taken to run inference and save results: {time.time() - start}")
