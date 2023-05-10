@@ -25,6 +25,7 @@ import torch.multiprocessing as mp
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
+from src.models.utils import load_model
 from utils import sigmoid, calc_accuracy, get_f_score, hierarchical_model_1_path
 from visualization import visualize, visualize_predictions
 
@@ -1015,6 +1016,7 @@ def process_slice(spect_slice, model,
     # s = time.time()
     # Transform the slice - this is definitely sketchy!!!! 
     # spect_slice = (spect_slice - np.mean(spect_slice)) / np.std(spect_slice)
+    pdb.set_trace()
     with torch.no_grad():
         spect_slice = torch.from_numpy(spect_slice).float()
         spect_slice = spect_slice.to(parameters.device)
@@ -1028,6 +1030,7 @@ def process_slice(spect_slice, model,
         # Now check if we are running the hierarchical model
         if hierarchical_model is not None:
             chunk_preds = torch.sigmoid(compressed_out)
+            
             binary_preds = torch.where(chunk_preds > parameters.THRESHOLD, 
                                     torch.tensor(1.0).to(parameters.device), 
                                     torch.tensor(0.0).to(parameters.device))
@@ -1060,7 +1063,8 @@ if __name__ == '__main__':
     model_1_path = args.model_1
 
     # Want the model id to match that of the second model! Then 
-    model_0, _ = loadModel(model_0_path)
+    model_0 = load_model(model_0_path)
+    # model_0, _ = loadModel(model_0_path)
     model_1, model_id = loadModel(model_1_path)
     print ("Using Model with ID:", model_id)
     
@@ -1069,8 +1073,10 @@ if __name__ == '__main__':
     model_1.eval()
 
     futures=[]
-    chunk_size = parameters.CHUNK_SIZE
-    jump_size = parameters.PREDICTION_SLIDE_LENGTH
+    chunk_size = 40000
+    # chunk_size = parameters.CHUNK_SIZE
+    jump_size = 39000
+    # jump_size = parameters.PREDICTION_SLIDE_LENGTH
     hierarchy_threshold=parameters.FALSE_POSITIVE_THRESHOLD
     sliding_window=True
 
@@ -1080,22 +1086,27 @@ if __name__ == '__main__':
     if not os.path.isdir(args.call_predictions_path):
         os.mkdir(args.call_predictions_path)
 
-    full_test_spect_paths = get_spectrogram_paths(args.test_files, args.spect_path)
+    # full_test_spect_paths = get_spectrogram_paths(args.test_files, args.spect_path)
+    full_test_spect_paths = [os.path.join("Rumble",f) for f in os.listdir(args.spect_path) if os.path.isfile(os.path.join(args.spect_path, f))][1:]
 
     # Include flag indicating if we are just making predictions with no labels
-    full_dataset = ElephantDatasetFull(full_test_spect_paths['spec'],
-                full_test_spect_paths['label'], full_test_spect_paths['gt'], only_preds=args.only_predictions)
+    full_dataset = ElephantDatasetFull(full_test_spect_paths,
+                "x", "y", only_preds=args.only_predictions)
+    # full_dataset = ElephantDatasetFull(full_test_spect_paths['spec'],
+    #             full_test_spect_paths['label'], full_test_spect_paths['gt'], only_preds=args.only_predictions)
     
+    # pdb.set_trace()
     if args.make_full_preds:
         for data in full_dataset:
-            spectrogram = data[0]
-            gt_call_path = data[2]
+            audio = data[0]
+            # gt_call_path = data[2]
 
-            # Get the spec id - stripping off the final tage '_gt.txt'
-            tags = gt_call_path.split('/')
-            last_tag = tags[-1]
-            data_id = last_tag[:-7]
-            print ("Generating Prediction for:", data_id)
+            # # Get the spec id - stripping off the final tage '_gt.txt'
+            # tags = gt_call_path.split('/')
+            # last_tag = tags[-1]
+            # data_id = last_tag[:-7]
+
+            print ("Generating Prediction for:", data[1])
 
             if sliding_window:
                 # May want to play around with the threhold for which we use the second model!
@@ -1103,34 +1114,34 @@ if __name__ == '__main__':
                 # long enough!! Let us try!
                 # Note if using a hierarchical model this a tuple for the form
                 # predictions = (heirarchical predictions, predictions)
-                predictions = np.zeros(spectrogram.shape[0])
+                predictions = np.zeros(audio.shape[0])
                 if model_1 is not None:
-                    hierarchical_predictions = np.zeros(spectrogram.shape[0])
-                overlap_counts = np.zeros(spectrogram.shape[0])
+                    hierarchical_predictions = np.zeros(audio.shape[0])
+                overlap_counts = np.zeros(audio.shape[0])
 
                 processes = []
                 # pdb.set_trace()
-                spectrogram = np.expand_dims(spectrogram,axis=0)
-                spectrogram = (spectrogram - np.mean(spectrogram)) / np.std(spectrogram)
+                audio = np.expand_dims(audio,axis=0)
+                # audio = (audio - np.mean(audio)) / np.std(audio)
                 # spectrogram = torch.from_numpy(spectrogram).float()
 
                 # create a pool with the number of available cores
                 # pool = Pool(cpu_count())
 
                 # divide the spectrogram into equal parts, each part will be processed in a separate process
-                parameters.device = "cpu"
+                # parameters.device = "cpu"
                 if parameters.device == "cpu":
                     print(f"Number of cpus: {cpu_count()}")
                     with ProcessPoolExecutor() as executor:
                         s = time.time()
-                        for spect_idx in range(0, spectrogram.shape[1], jump_size):
+                        for spect_idx in range(0, audio.shape[1], jump_size):
 
                             last_chunk_flag = False
-                            if (spect_idx + chunk_size > spectrogram.shape[1]):
+                            if (spect_idx + chunk_size > audio.shape[1]):
                                 last_chunk_flag = True
 
                             # spect_slice = spectrogram[spect_idx:spect_idx + chunk_size, :]
-                            spect_slice = spectrogram[:, spect_idx:spect_idx + chunk_size, :]
+                            spect_slice = audio[:, spect_idx:spect_idx + chunk_size]
                             processes.append(executor.submit(process_slice, spect_slice, model_0, 
                                                                 model_1, hierarchy_threshold, 
                                                                 spect_idx, last_chunk_flag,
@@ -1160,12 +1171,12 @@ if __name__ == '__main__':
                     # pool.join()
 
                 else:
-                    for spect_idx in tqdm(range(0, spectrogram.shape[1], jump_size)):
+                    for spect_idx in tqdm(range(0, audio.shape[1], jump_size)):
                         last_chunk_flag = False
-                        if (spect_idx - jump_size + chunk_size != spectrogram.shape[1]):
+                        if (spect_idx + chunk_size > audio.shape[1]):
                             last_chunk_flag = True
                         # pdb.set_trace()
-                        spect_slice = spectrogram[:, spect_idx:spect_idx + chunk_size, :]
+                        spect_slice = audio[:, spect_idx:spect_idx + chunk_size]
                         if model_1 is not None:
                             c_out, hi_c_out, spect_idx = process_slice(spect_slice, model_0, 
                                                         model_1, hierarchy_threshold, 
@@ -1177,6 +1188,7 @@ if __name__ == '__main__':
                                                         model_1, hierarchy_threshold, 
                                                         spect_idx, last_chunk_flag,
                                                         predictions)
+                            
                         predictions[spect_idx: spect_idx + chunk_size] += c_out
                         overlap_counts[spect_idx: spect_idx + chunk_size] += 1
 
@@ -1192,7 +1204,7 @@ if __name__ == '__main__':
                 if model_1 is not None:
                     hierarchical_predictions = sigmoid(hierarchical_predictions)                
                 
-                save_predictions(model_id, f'{data_id}_spec', model_1, hierarchical_predictions, predictions, args.predictions_path)
+                save_predictions(model_id, f'{data[1]}_spec', model_1, hierarchical_predictions, predictions, args.predictions_path)
 
                 end = time.time()
                 print("total time taken this loop: ", end - start)

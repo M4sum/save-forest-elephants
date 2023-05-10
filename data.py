@@ -15,7 +15,7 @@ import os
 import glob
 import parameters
 from torch.utils.data import Dataset, DataLoader
-
+from scipy.io import wavfile
 
 from utils import set_seed
 
@@ -654,12 +654,14 @@ class ElephantDatasetFull(data.Dataset):
     Return a single element at provided index
     """
     def __getitem__(self, index):
-        spectrogram_path = self.specs[index]
-        label_path = self.labels[index]
-        gt_call_path = self.gt_calls[index]
+        # pdb.set_trace()
+        audio_path = self.specs[index]
+        # label_path = self.labels[index]
+        # gt_call_path = self.gt_calls[index]
         s = time.time()
-        spectrogram = np.load(spectrogram_path)
-        spectrogram = self.transform(spectrogram)
+        # spectrogram = np.load(spectrogram_path)
+        sample_Rate, spectrogram = wavfile.read(audio_path)
+        # spectrogram = self.transform(spectrogram)
         print(f"Time taken to read a 24 hr file and transform: {time.time() - s}")
             
         # Honestly may be worth pre-process this
@@ -667,6 +669,6 @@ class ElephantDatasetFull(data.Dataset):
         #label = torch.from_numpy(label)
 
         if self.only_preds:
-            return spectrogram, None, gt_call_path
+            return spectrogram, audio_path.split("/")[1]
         else:   
-            return spectrogram, label, gt_call_path
+            return spectrogram, audio_path.split("/")[1][:-3]
