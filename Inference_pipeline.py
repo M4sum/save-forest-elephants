@@ -46,6 +46,7 @@ import sys
 import os
 import time
 import pdb
+from utils import path_split_agnostic
 
 parser = argparse.ArgumentParser()
 
@@ -56,21 +57,13 @@ def format_paths(spect_dir_path, spect_out_path, model_0_path, model_1_path, res
         if current_path is None:
             continue
         # Split the input path into its components
-        path_components = []
-        while True:
-            current_path, tail = os.path.split(current_path)
-            if tail:
-                path_components.insert(0, tail)
-            else:
-                if current_path:
-                    path_components.insert(0, current_path)
-                break
+        path_components = path_split_agnostic(current_path)
         # Print the path components
-        print(path_components)
+        # print(path_components)
         # Rejoin the path components into a path string
         path = os.path.join(*path_components)
         # Print the reassembled path
-        print(path)
+        # print(path)
         relevant_paths[i] = path
 
     return relevant_paths[0], relevant_paths[1], relevant_paths[2], relevant_paths[3], relevant_paths[4], relevant_paths[5]

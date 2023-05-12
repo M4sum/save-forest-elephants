@@ -295,6 +295,20 @@ def multi_class_precission_recall_values(logits, labels):
 
     return tp, tp_fp, tp_fn
 
+def path_split_agnostic(input_path):
+    # Split the input path into its components
+    path_components = []
+    while True:
+        input_path, tail = os.path.split(input_path)
+        if tail:
+            path_components.insert(0, tail)
+        else:
+            if input_path:
+                path_components.insert(0, input_path)
+            break
+
+    return path_components
+
 
 
 

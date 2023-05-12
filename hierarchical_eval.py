@@ -26,7 +26,7 @@ import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
 from src.models.utils import load_model
-from utils import sigmoid, calc_accuracy, get_f_score, hierarchical_model_1_path
+from utils import sigmoid, calc_accuracy, get_f_score, hierarchical_model_1_path, path_split_agnostic
 from visualization import visualize, visualize_predictions
 
 
@@ -85,7 +85,8 @@ def loadModel(model_path):
     model = torch.load(model_path, map_location=parameters.device)
     # print (model)
     # Get the model name from the path
-    tokens = model_path.split('/')
+    # tokens = model_path.split('/')
+    tokens = path_split_agnostic(model_path)
     # The normal hierarchical model has two components: 
     # 1) The name with the data params etc.
     # 2) The actual model0/1 architecture
@@ -599,7 +600,9 @@ def find_elephant_calls(binary_preds, min_call_length=10, in_seconds=False, samp
     while True:
         begin = search
         # Look for the start of a predicted calls
-        while begin < binary_preds.shape[0] and binary_preds[begin] == 0:
+        # print(f'binary_preds.shape[0] = {binary_preds.shape[0]}')
+        # print(f'binary_preds[begin] = {binary_preds[begin]}')
+        while (begin < binary_preds.shape[0]) and (binary_preds[begin].any() == 0):
             begin += 1
 
         if begin >= binary_preds.shape[0]:
@@ -607,7 +610,7 @@ def find_elephant_calls(binary_preds, min_call_length=10, in_seconds=False, samp
 
         end = begin + 1
         # Look for the end of the call
-        while end < binary_preds.shape[0] and binary_preds[end] == 1:
+        while (end < binary_preds.shape[0]) and (binary_preds[end][0].all() == 1):
             end += 1
 
         call_length = end - begin
@@ -837,18 +840,20 @@ def extract_call_predictions(dataset, model_id, predictions_path, pred_threshold
     num_preds = 0
     for data in dataset:
         spectrogram = data[0]
-        labels = data[1]
-        gt_call_path = data[2]
+        # labels = data[1]
+        data_id = data[1][-1]
+        # gt_call_path = data[2]
 
         # Get the spec id - stripping off the final tage '_gt.txt'
-        tags = gt_call_path.split('/')
-        last_tag = tags[-1]
-        data_id = last_tag[:-7]
+        # tags = gt_call_path.split('/')
+        # last_tag = tags[-1]
+        # data_id = last_tag[:-7]
         print ("Generating Prediction for:", data_id)
 
         # pdb.set_trace()
         
-        predictions = np.load(predictions_path + '/' + model_id + "/" + data_id + '.npy')
+        # predictions = np.load(predictions_path + '/' + model_id + "/" + data_id + '.npy')
+        predictions = np.load(os.path.join(predictions_path, model_id, data_id + '.npy'))
 
         binary_preds, smoothed_predictions = get_binary_predictions(predictions, threshold=pred_threshold, smooth=smooth)
 
@@ -928,16 +933,19 @@ def create_predictions_csv(dataset, binary_predictions, predictions, save_path, 
     dummy_high_freq = 100
     for data in dataset:
         spectrogram = data[0]
-        labels = data[1]
-        gt_call_path = data[2]
+        # labels = data[1]
+        wav_file = data[1][-1]
+        data_id = wav_file[:-4]
+        # gt_call_path = data[2]
         
         # Get the spec id - stripping off the final tage '_gt.txt'
-        tags = gt_call_path.split('/')
-        last_tag = tags[-1]
-        data_id = last_tag[:-7]
-        wav_file = data_id + ".wav"
+        # tags = gt_call_path.split('/')
+        # last_tag = tags[-1]
+        # data_id = last_tag[:-7]
+
         print ("Generating Prediction for:", data_id)
 
+        '''
         # Read the gt file to extract the "begin path" data_field
         if labels is not None:
             gt_file = csv.DictReader(open(gt_call_path,'rt'), delimiter='\t')
@@ -947,9 +955,12 @@ def create_predictions_csv(dataset, binary_predictions, predictions, save_path, 
                 break
         else:
             begin_path = wav_file
-
+        '''
+        begin_path = os.path.join(*data[1])
+        begin_path, tail = os.path.split(begin_path)
         # Save preditions
-        with open(save_path + '/' + data_id + '.txt', 'w') as f:
+        new_path = os.path.join(save_path, data_id + '.txt')
+        with open(new_path, 'w') as f:
             # Create the hedding
             f.write('Selection\tView\tChannel\tBegin Time (s)\tEnd Time (s)\tLow Freq (Hz)\tHigh Freq (Hz)\tBegin Path\tFile Offset (s)\tBegin File\tSite\thour\tfileDate\tdate(raven)\tTag 1\tTag 2\tnotes\tAnalyst\n')
 
@@ -962,7 +973,8 @@ def create_predictions_csv(dataset, binary_predictions, predictions, save_path, 
 
             # Output the individual predictions
             i = 1
-            for prediction in binary_predictions[data_id]:
+            # for prediction in binary_predictions[data_id]:
+            for prediction in binary_predictions[wav_file]:
                 # Get the time in seconds
                 if in_seconds:
                     pred_start, pred_end, length = prediction
@@ -1044,7 +1056,8 @@ if __name__ == '__main__':
         model_1, model_id = loadModel(model_1_path)
         model_1.eval()
 
-    model_id = model_0_path.split("/")[1][:-2]
+    # model_id = model_0_path.split("/")[1][:-2]
+    model_id = path_split_agnostic(model_0_path)[1][:-3]
     print ("Using Model with ID:", model_id)
     model_1 = None
     # Put in eval mode!
@@ -1067,7 +1080,13 @@ if __name__ == '__main__':
         os.mkdir(args.call_predictions_path)
 
     # full_test_spect_paths = get_spectrogram_paths(args.test_files, args.spect_path)
-    full_test_spect_paths = [os.path.join("Rumble",f) for f in os.listdir(args.spect_path) if os.path.isfile(os.path.join(args.spect_path, f))][1:]
+    # full_test_spect_paths = [os.path.join("Rumble",f) for f in os.listdir(args.spect_path) if os.path.isfile(os.path.join(args.spect_path, f))][1:]
+
+    full_test_spect_paths = []
+    for f in os.listdir(args.spect_path):
+        if os.path.isfile(os.path.join(args.spect_path, f)):
+            full_test_spect_paths.append(os.path.join(args.spect_path, f))
+
 
     # Include flag indicating if we are just making predictions with no labels
     full_dataset = ElephantDatasetFull(full_test_spect_paths,
@@ -1085,7 +1104,7 @@ if __name__ == '__main__':
             # last_tag = tags[-1]
             # data_id = last_tag[:-7]
 
-            print ("Generating Prediction for:", data[1])
+            print ("Generating Prediction for:", data[1][-1])
 
             if sliding_window:
                 # May want to play around with the threhold for which we use the second model!
@@ -1178,7 +1197,8 @@ if __name__ == '__main__':
                 rumble_predictions = sigmoid(rumble_predictions)
                 gunshot_predictions = sigmoid(gunshot_predictions)
                 
-                save_predictions(model_id, f'{data[1]}_rumble_prediction', model_1, None, rumble_predictions, args.predictions_path)
+                # save_predictions(model_id, f'{data[1]}_rumble_prediction', model_1, None, rumble_predictions, args.predictions_path)
+                save_predictions(model_id, f'{data[1][-1]}', model_1, None, rumble_predictions, args.predictions_path)
 
                 end = time.time()
                 print("total time taken this loop: ", end - start)
@@ -1238,7 +1258,8 @@ if __name__ == '__main__':
         binary_predictions, predictions= extract_call_predictions(full_dataset, model_id, args.predictions_path, 
                     min_call_length=parameters.MIN_CALL_LENGTH, pred_threshold=parameters.EVAL_THRESHOLD)
         # Save for now to a folder determined by the model id
-        save_path = args.call_predictions_path + '/' + model_id
+        # save_path = args.call_predictions_path + '/' + model_id
+        save_path = os.path.join(args.call_predictions_path, model_id)
         if not os.path.isdir(save_path):
             os.mkdir(save_path)
         # Save the predictions

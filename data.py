@@ -17,7 +17,7 @@ import parameters
 from torch.utils.data import Dataset, DataLoader
 from scipy.io import wavfile
 
-from utils import set_seed
+from utils import set_seed, path_split_agnostic
 
 Noise_Stats_Directory = "../elephant_dataset/eleph_dataset/Noise_Stats/"
 
@@ -668,7 +668,8 @@ class ElephantDatasetFull(data.Dataset):
         #spectrogram = torch.from_numpy(spectrogram)
         #label = torch.from_numpy(label)
 
+        path_components = path_split_agnostic(audio_path)
         if self.only_preds:
-            return spectrogram, audio_path.split("/")[1]
+            return spectrogram, path_components
         else:   
-            return spectrogram, audio_path.split("/")[1][:-3]
+            return spectrogram, path_components[1][:-3]

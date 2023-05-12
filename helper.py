@@ -10,7 +10,7 @@ def load_spectrograms(filename, file_id):
 def save_predictions(model_id, data_id, hierarchical_model, hierarchical_predictions, predictions, predictions_path):
 # Save preditions
         # Save for now to a folder determined by the model id
-        path = os.path.join(predictions_path,model_id)
+        path = os.path.join(predictions_path, model_id)
         if not os.path.isdir(path):
             os.mkdir(path)
 
