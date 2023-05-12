@@ -1009,46 +1009,19 @@ def get_spectrogram_paths(test_files_path, spectrogram_path):
 
     return paths
 
-def process_slice(spect_slice, model, 
-                  hierarchical_model, hierarchy_threshold, 
-                  spect_idx, last_chunk_flag,
-                  predictions):
-    # s = time.time()
-    # Transform the slice - this is definitely sketchy!!!! 
-    # spect_slice = (spect_slice - np.mean(spect_slice)) / np.std(spect_slice)
-    pdb.set_trace()
+def process_slice(spect_slice, model, last_chunk_flag, last_chunk_id):
     with torch.no_grad():
+        # pdb.set_trace()
         spect_slice = torch.from_numpy(spect_slice).float()
         spect_slice = spect_slice.to(parameters.device)
         outputs = model(spect_slice) # Shape - (1, chunk_size, 1)
 
         if last_chunk_flag:
-            compressed_out = outputs.view(-1, 1).squeeze()[:predictions[spect_idx: ].shape[0]]
+            compressed_out = outputs.view(-1, 1).squeeze()[:last_chunk_id]
         else:
             compressed_out = outputs.view(-1, 1).squeeze()
-
-        # Now check if we are running the hierarchical model
-        if hierarchical_model is not None:
-            chunk_preds = torch.sigmoid(compressed_out)
-            
-            binary_preds = torch.where(chunk_preds > parameters.THRESHOLD, 
-                                    torch.tensor(1.0).to(parameters.device), 
-                                    torch.tensor(0.0).to(parameters.device))
-            pred_counts = torch.sum(binary_preds)
-            hierarchical_compressed_out = compressed_out
-
-            # Check if we need to run the second model
-            if pred_counts.item() >= hierarchy_threshold:
-                hierarchical_outputs = hierarchical_model(spect_slice)
-                if last_chunk_flag:
-                    hierarchical_compressed_out = hierarchical_outputs.view(-1, 1).squeeze()[:predictions[spect_idx: ].shape[0]]
-                else:
-                    hierarchical_compressed_out = hierarchical_outputs.view(-1, 1).squeeze()
-            
-            # print(f"Time taken by processs_slice: {time.time() - s}")
-            return compressed_out.cpu().detach().numpy(), hierarchical_compressed_out.cpu().detach().numpy(), spect_idx
         
-        return compressed_out.cpu().detach().numpy(), spect_idx
+        return outputs.cpu().detach().numpy()
 
 if __name__ == '__main__':
     start = time.time()
@@ -1061,23 +1034,30 @@ if __name__ == '__main__':
     # Load Model_0 and Model_1 of the hierarchical models
     model_0_path = args.model_0
     model_1_path = args.model_1
+    # pdb.set_trace()
 
     # Want the model id to match that of the second model! Then 
     model_0 = load_model(model_0_path)
-    # model_0, _ = loadModel(model_0_path)
-    model_1, model_id = loadModel(model_1_path)
-    print ("Using Model with ID:", model_id)
-    
-    # Put in eval mode!
     model_0.eval()
-    model_1.eval()
+    # model_0, _ = loadModel(model_0_path)
+    if model_1_path:
+        model_1, model_id = loadModel(model_1_path)
+        model_1.eval()
 
-    futures=[]
+    model_id = model_0_path.split("/")[1][:-2]
+    print ("Using Model with ID:", model_id)
+    model_1 = None
+    # Put in eval mode!
+    
+    
+    sample_rate = 4000
     chunk_size = 40000
+    out_dim = int(chunk_size/sample_rate)
     # chunk_size = parameters.CHUNK_SIZE
-    jump_size = 39000
+    # need to use jump_size in multiples of sample rate i.e. 4k
+    jump_size = 40000
     # jump_size = parameters.PREDICTION_SLIDE_LENGTH
-    hierarchy_threshold=parameters.FALSE_POSITIVE_THRESHOLD
+    # hierarchy_threshold=parameters.FALSE_POSITIVE_THRESHOLD
     sliding_window=True
 
     # Need to make sure the save paths exist!
@@ -1095,7 +1075,6 @@ if __name__ == '__main__':
     # full_dataset = ElephantDatasetFull(full_test_spect_paths['spec'],
     #             full_test_spect_paths['label'], full_test_spect_paths['gt'], only_preds=args.only_predictions)
     
-    # pdb.set_trace()
     if args.make_full_preds:
         for data in full_dataset:
             audio = data[0]
@@ -1114,10 +1093,10 @@ if __name__ == '__main__':
                 # long enough!! Let us try!
                 # Note if using a hierarchical model this a tuple for the form
                 # predictions = (heirarchical predictions, predictions)
-                predictions = np.zeros(audio.shape[0])
-                if model_1 is not None:
-                    hierarchical_predictions = np.zeros(audio.shape[0])
-                overlap_counts = np.zeros(audio.shape[0])
+                num_chunks = int(np.ceil(audio.shape[0]/chunk_size))
+                rumble_predictions = np.zeros((num_chunks,out_dim))
+                gunshot_predictions = np.zeros((num_chunks,out_dim))
+                overlap_counts = np.ones((num_chunks,out_dim))
 
                 processes = []
                 # pdb.set_trace()
@@ -1135,17 +1114,17 @@ if __name__ == '__main__':
                     with ProcessPoolExecutor() as executor:
                         s = time.time()
                         for spect_idx in range(0, audio.shape[1], jump_size):
-
                             last_chunk_flag = False
+                            spect_slice = audio[:, spect_idx:spect_idx + chunk_size]
                             if (spect_idx + chunk_size > audio.shape[1]):
                                 last_chunk_flag = True
+                                if spect_slice.shape[1] < chunk_size:
+                                    continue
 
                             # spect_slice = spectrogram[spect_idx:spect_idx + chunk_size, :]
-                            spect_slice = audio[:, spect_idx:spect_idx + chunk_size]
+                            # spect_slice = audio[:, spect_idx:spect_idx + chunk_size]
                             processes.append(executor.submit(process_slice, spect_slice, model_0, 
-                                                                model_1, hierarchy_threshold, 
-                                                                spect_idx, last_chunk_flag,
-                                                                predictions))
+                                                             last_chunk_flag, rumble_predictions[spect_idx: ].shape[0]))
                         
                         print(f"Time taken for distributing chunks to processors: {time.time() - s}")
                         
@@ -1154,15 +1133,12 @@ if __name__ == '__main__':
                         # wait for all processes to finish and collect compressed outputs
                         for process in as_completed(processes):
                             # pdb.set_trace()
-                            if model_1 is not None:
-                                c_out, hi_c_out, spect_idx = process.result()
-                                hierarchical_predictions[spect_idx: spect_idx + chunk_size] += hi_c_out
-                            
-                            else:
-                                c_out, spect_idx = process.result()
+                            c_out, spect_idx = process.result()
 
-                            predictions[spect_idx: spect_idx + chunk_size] += c_out
-                            overlap_counts[spect_idx: spect_idx + chunk_size] += 1
+                            rumble_predictions[start_idx*c_out.shape[0]:(start_idx+1)*c_out.shape[0]] += c_out[:,0,:]
+                            gunshot_predictions[start_idx*c_out.shape[0]:(start_idx+1)*c_out.shape[0]] += c_out[:,1,:]
+                            overlap_counts[start_idx*c_out.shape[0]:(start_idx+1)*c_out.shape[0]] += 1
+                            start_idx += 1
 
                             pbar2.update(1)
 
@@ -1171,40 +1147,38 @@ if __name__ == '__main__':
                     # pool.join()
 
                 else:
+                    # pdb.set_trace()
+                    # start_idx is start of start index of predictions array
+                    # which is different than spect_idx which is start index of input array that jumps jump_size
+                    # every iteration
+                    start_idx = 0
                     for spect_idx in tqdm(range(0, audio.shape[1], jump_size)):
                         last_chunk_flag = False
+                        spect_slice = audio[:, spect_idx:spect_idx + chunk_size]
                         if (spect_idx + chunk_size > audio.shape[1]):
                             last_chunk_flag = True
+                            if spect_slice.shape[1] < chunk_size:
+                                continue
+                        c_out = process_slice(spect_slice, model_0, last_chunk_flag,
+                                              rumble_predictions[spect_idx: ].shape[0])
+                        # if last_chunk_flag:
+                        #     predictions[start_idx: ] += c_out
+                        #     overlap_counts[start_idx: end_idx] += 1
                         # pdb.set_trace()
-                        spect_slice = audio[:, spect_idx:spect_idx + chunk_size]
-                        if model_1 is not None:
-                            c_out, hi_c_out, spect_idx = process_slice(spect_slice, model_0, 
-                                                        model_1, hierarchy_threshold, 
-                                                        spect_idx, last_chunk_flag,
-                                                        predictions)
-                            hierarchical_predictions[spect_idx: spect_idx + chunk_size] += hi_c_out
-                        else:
-                            c_out, spect_idx = process_slice(spect_slice, model_0, 
-                                                        model_1, hierarchy_threshold, 
-                                                        spect_idx, last_chunk_flag,
-                                                        predictions)
-                            
-                        predictions[spect_idx: spect_idx + chunk_size] += c_out
-                        overlap_counts[spect_idx: spect_idx + chunk_size] += 1
-
+                        rumble_predictions[start_idx*c_out.shape[0]:(start_idx+1)*c_out.shape[0]] += c_out[:,0,:]
+                        gunshot_predictions[start_idx*c_out.shape[0]:(start_idx+1)*c_out.shape[0]] += c_out[:,1,:]
+                        overlap_counts[start_idx*c_out.shape[0]:(start_idx+1)*c_out.shape[0]] += 1
+                        start_idx += 1
                 
                 # Average the predictions on overlapping frames
-                predictions = predictions / overlap_counts
-                if model_1 is not None:
-                    hierarchical_predictions = hierarchical_predictions / overlap_counts
+                rumble_predictions = rumble_predictions / overlap_counts
+                gunshot_predictions = gunshot_predictions / overlap_counts
 
                 # Get squashed [0, 1] predictions
-                predictions = sigmoid(predictions)
-
-                if model_1 is not None:
-                    hierarchical_predictions = sigmoid(hierarchical_predictions)                
+                rumble_predictions = sigmoid(rumble_predictions)
+                gunshot_predictions = sigmoid(gunshot_predictions)
                 
-                save_predictions(model_id, f'{data[1]}_spec', model_1, hierarchical_predictions, predictions, args.predictions_path)
+                save_predictions(model_id, f'{data[1]}_rumble_prediction', model_1, None, rumble_predictions, args.predictions_path)
 
                 end = time.time()
                 print("total time taken this loop: ", end - start)

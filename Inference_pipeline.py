@@ -45,13 +45,13 @@ import subprocess
 import sys
 import os
 import time
+import pdb
 
 parser = argparse.ArgumentParser()
 
 
 def format_paths(spect_dir_path, spect_out_path, model_0_path, model_1_path, result_dir_path, spect_path_path):
     relevant_paths = [spect_dir_path, spect_out_path, model_0_path, model_1_path, result_dir_path, spect_path_path]
-
     for i, current_path in enumerate(relevant_paths):
         if current_path is None:
             continue
@@ -170,9 +170,9 @@ if __name__ == '__main__':
     # provided models in the same folder as this script
     parser.add_argument('--make_predictions', action='store_true',
         help='Generate predictions for the data!')
-    parser.add_argument('--model_0', type=str, default="./Model/first_stage.pt",
+    parser.add_argument('--model_0', type=str, default=None,
         help='Path to the model provided called "first_stage.pt"')
-    parser.add_argument('--model_1', type=str, default="./Model/second_stage.pt",
+    parser.add_argument('--model_1', type=str, default=None,
         help='Path to the model provided called "second_stage.pt"')
     parser.add_argument('--spect_path', type=str, default=None,
         help='The directory where the spectrogram .npy files exist. This will be the same directory as' \
