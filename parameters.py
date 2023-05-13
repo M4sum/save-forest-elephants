@@ -27,7 +27,8 @@ MIN_CALL_LENGTH = 15
 EVAL_THRESHOLD = 0.5
 
 ''' Hop/stride length of model window when predicting over full spectrogram '''
-PREDICTION_SLIDE_LENGTH = 128
+# need to use PREDICTION_SLIDE_LENGTH in multiples of sample rate i.e. 4k for current implementation
+PREDICTION_SLIDE_LENGTH = 32000
 
 ##############################
 #### Model_0 / Solo Model ####
@@ -49,7 +50,7 @@ CALL_REPEATS = 1
 NORM = "norm"
 SCALE = True # Log scale the spectrograms
 SHIFT_WINDOWS = False
-CHUNK_SIZE = 256
+CHUNK_SIZE = 40000
 
 #######################################
 #### Hierarchical Model Parameters ####

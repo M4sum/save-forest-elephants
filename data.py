@@ -629,46 +629,16 @@ class SpectrogramDataset(Dataset):
     NEED TO FIX THIS!!
 """
 class ElephantDatasetFull(data.Dataset):
-    def __init__(self, spectrogram_files, label_files, gt_calls, preprocess="norm", 
-                    scale=True, only_preds=False):
+    def __init__(self, spectrogram_files, preprocess="norm", 
+                    scale=True):
 
-        self.specs = spectrogram_files
-        self.labels = label_files
-        self.gt_calls = gt_calls # This is the .txt file that contains start and end times of calls
-        self.preprocess = preprocess
-        self.scale = scale
-        self.only_preds = only_preds
-        
-        print('Normalizing with {} and scaling {}'.format(preprocess, scale))
+        self.specs = spectrogram_files        
 
     def __len__(self):
         return len(self.specs)
 
-    def transform(self, spectrogram): # We need to fix this probably!!!
-        # Potentially include other transforms
-        if self.scale:
-            spectrogram = 10 * np.log10(spectrogram)
-        return spectrogram
-
-    """
-    Return a single element at provided index
-    """
     def __getitem__(self, index):
-        # pdb.set_trace()
         audio_path = self.specs[index]
-        # label_path = self.labels[index]
-        # gt_call_path = self.gt_calls[index]
-        s = time.time()
-        # spectrogram = np.load(spectrogram_path)
-        sample_Rate, spectrogram = wavfile.read(audio_path)
-        # spectrogram = self.transform(spectrogram)
-        print(f"Time taken to read a 24 hr file and transform: {time.time() - s}")
-            
-        # Honestly may be worth pre-process this
-        #spectrogram = torch.from_numpy(spectrogram)
-        #label = torch.from_numpy(label)
+        _, audio = wavfile.read(audio_path)
 
-        if self.only_preds:
-            return spectrogram, audio_path.split("/")[1]
-        else:   
-            return spectrogram, audio_path.split("/")[1][:-3]
+        return audio, audio_path.split("/")[1][:-4]

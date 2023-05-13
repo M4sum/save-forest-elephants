@@ -6,12 +6,11 @@ experience, take a look at that module.
 
 import argparse
 import asyncio
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, as_completed
 import csv
 from data import get_loader, ElephantDatasetFull, SpectrogramDataset
-from helper import save_predictions
 import math
-import multiprocessing as mp
+# import multiprocessing as mp
 from multiprocessing import Pool, cpu_count
 import numpy as np
 import os
@@ -21,19 +20,19 @@ from scipy.ndimage import gaussian_filter1d
 from sklearn.metrics import f1_score
 import time
 import torch
-import torch.multiprocessing as mp
+# import torch.multiprocessing as mp
 import torch.nn as nn
-from torch.utils.data import Dataset, DataLoader
+# from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
 from src.models.utils import load_model
-from utils import sigmoid, calc_accuracy, get_f_score, hierarchical_model_1_path
-from visualization import visualize, visualize_predictions
+from utils import sigmoid, calc_accuracy, save_predictions
+from visualization import visualize_predictions
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--preds_path', type=str, dest='predictions_path', default='../Predictions',
+parser.add_argument('--preds_path', type=str, dest='predictions_path', default='Predictions',
     help = 'Path to the folder where we output the full test predictions')
-parser.add_argument('--call_preds_path', type=str, dest='call_predictions_path', default='../Call_Predictions',
+parser.add_argument('--call_preds_path', type=str, dest='call_predictions_path', default='Call_Predictions',
     help='Path to the folder where we save model csv predictions')
 
 # Defaults based on quatro
@@ -65,8 +64,6 @@ parser.add_argument('--visualize', action='store_true',
 
 parser.add_argument('--model_0', type=str,
     help='Path to Model_0')
-parser.add_argument('--model_1', type=str,
-    help='Path to Model_1')
 
 
 '''
@@ -835,20 +832,13 @@ def extract_call_predictions(dataset, model_id, predictions_path, pred_threshold
     results = {} 
     
     num_preds = 0
-    for data in dataset:
-        spectrogram = data[0]
-        labels = data[1]
-        gt_call_path = data[2]
-
-        # Get the spec id - stripping off the final tage '_gt.txt'
-        tags = gt_call_path.split('/')
-        last_tag = tags[-1]
-        data_id = last_tag[:-7]
-        print ("Generating Prediction for:", data_id)
+    for data in full_dataset:
+        file_id = data[1]
+        print("Generating Prediction for:", file_id)
 
         # pdb.set_trace()
         
-        predictions = np.load(predictions_path + '/' + model_id + "/" + data_id + '.npy')
+        predictions = np.load(predictions_path + '/' + model_id + "/" + file_id + '.npy')
 
         binary_preds, smoothed_predictions = get_binary_predictions(predictions, threshold=pred_threshold, smooth=smooth)
 
@@ -863,7 +853,7 @@ def extract_call_predictions(dataset, model_id, predictions_path, pred_threshold
             visual_full_recall(spectrogram, smoothed_predictions, labels, processed_preds)       
         
         
-        results[data_id] = predicted_calls
+        results[file_id] = predicted_calls
        
     return results, smoothed_predictions
 
@@ -1012,7 +1002,7 @@ def get_spectrogram_paths(test_files_path, spectrogram_path):
 def process_slice(spect_slice, model, last_chunk_flag, last_chunk_id):
     with torch.no_grad():
         # pdb.set_trace()
-        spect_slice = torch.from_numpy(spect_slice).float()
+        # spect_slice = torch.from_numpy(spect_slice).float()
         spect_slice = spect_slice.to(parameters.device)
         outputs = model(spect_slice) # Shape - (1, chunk_size, 1)
 
@@ -1031,34 +1021,14 @@ if __name__ == '__main__':
     Example runs:
 
     """
-    # Load Model_0 and Model_1 of the hierarchical models
     model_0_path = args.model_0
-    model_1_path = args.model_1
-    # pdb.set_trace()
 
     # Want the model id to match that of the second model! Then 
     model_0 = load_model(model_0_path)
     model_0.eval()
-    # model_0, _ = loadModel(model_0_path)
-    if model_1_path:
-        model_1, model_id = loadModel(model_1_path)
-        model_1.eval()
 
-    model_id = model_0_path.split("/")[1][:-2]
+    model_id = model_0_path.split("/")[1][:-3]
     print ("Using Model with ID:", model_id)
-    model_1 = None
-    # Put in eval mode!
-    
-    
-    sample_rate = 4000
-    chunk_size = 40000
-    out_dim = int(chunk_size/sample_rate)
-    # chunk_size = parameters.CHUNK_SIZE
-    # need to use jump_size in multiples of sample rate i.e. 4k
-    jump_size = 40000
-    # jump_size = parameters.PREDICTION_SLIDE_LENGTH
-    # hierarchy_threshold=parameters.FALSE_POSITIVE_THRESHOLD
-    sliding_window=True
 
     # Need to make sure the save paths exist!
     if not os.path.isdir(args.predictions_path):
@@ -1070,122 +1040,87 @@ if __name__ == '__main__':
     full_test_spect_paths = [os.path.join("Rumble",f) for f in os.listdir(args.spect_path) if os.path.isfile(os.path.join(args.spect_path, f))][1:]
 
     # Include flag indicating if we are just making predictions with no labels
-    full_dataset = ElephantDatasetFull(full_test_spect_paths,
-                "x", "y", only_preds=args.only_predictions)
-    # full_dataset = ElephantDatasetFull(full_test_spect_paths['spec'],
-    #             full_test_spect_paths['label'], full_test_spect_paths['gt'], only_preds=args.only_predictions)
-    
+    full_dataset = ElephantDatasetFull(full_test_spect_paths)
+   
     if args.make_full_preds:
         for data in full_dataset:
             audio = data[0]
-            # gt_call_path = data[2]
+            file_id = data[1]
+            sample_rate = 4000
+            chunk_size = parameters.CHUNK_SIZE
+            jump_size = parameters.PREDICTION_SLIDE_LENGTH
+            out_dim = int(chunk_size/sample_rate)
 
-            # # Get the spec id - stripping off the final tage '_gt.txt'
-            # tags = gt_call_path.split('/')
-            # last_tag = tags[-1]
-            # data_id = last_tag[:-7]
+            print ("Generating Prediction for:", file_id)
 
-            print ("Generating Prediction for:", data[1])
+            num_chunks = int(np.ceil(audio.shape[0]/chunk_size))
+            rumble_predictions = np.zeros(num_chunks*out_dim)
+            gunshot_predictions = np.zeros(num_chunks*out_dim)
+            overlap_counts = np.zeros(num_chunks*out_dim)
 
-            if sliding_window:
-                # May want to play around with the threhold for which we use the second model!
-                # For the true predicitions we may also want to actually see if there is a contiguous segment
-                # long enough!! Let us try!
-                # Note if using a hierarchical model this a tuple for the form
-                # predictions = (heirarchical predictions, predictions)
-                num_chunks = int(np.ceil(audio.shape[0]/chunk_size))
-                rumble_predictions = np.zeros((num_chunks,out_dim))
-                gunshot_predictions = np.zeros((num_chunks,out_dim))
-                overlap_counts = np.ones((num_chunks,out_dim))
+            processes = []
+            audio = np.expand_dims(audio,axis=0)
+            audio = torch.from_numpy(audio).float()
 
-                processes = []
-                # pdb.set_trace()
-                audio = np.expand_dims(audio,axis=0)
-                # audio = (audio - np.mean(audio)) / np.std(audio)
-                # spectrogram = torch.from_numpy(spectrogram).float()
-
-                # create a pool with the number of available cores
-                # pool = Pool(cpu_count())
-
-                # divide the spectrogram into equal parts, each part will be processed in a separate process
-                # parameters.device = "cpu"
-                if parameters.device == "cpu":
-                    print(f"Number of cpus: {cpu_count()}")
-                    with ProcessPoolExecutor() as executor:
-                        s = time.time()
-                        for spect_idx in range(0, audio.shape[1], jump_size):
-                            last_chunk_flag = False
-                            spect_slice = audio[:, spect_idx:spect_idx + chunk_size]
-                            if (spect_idx + chunk_size > audio.shape[1]):
-                                last_chunk_flag = True
-                                if spect_slice.shape[1] < chunk_size:
-                                    continue
-
-                            # spect_slice = spectrogram[spect_idx:spect_idx + chunk_size, :]
-                            # spect_slice = audio[:, spect_idx:spect_idx + chunk_size]
-                            processes.append(executor.submit(process_slice, spect_slice, model_0, 
-                                                             last_chunk_flag, rumble_predictions[spect_idx: ].shape[0]))
-                        
-                        print(f"Time taken for distributing chunks to processors: {time.time() - s}")
-                        
-                        pbar2 = tqdm(total = len(processes))
-                        
-                        # wait for all processes to finish and collect compressed outputs
-                        for process in as_completed(processes):
-                            # pdb.set_trace()
-                            c_out, spect_idx = process.result()
-
-                            rumble_predictions[start_idx*c_out.shape[0]:(start_idx+1)*c_out.shape[0]] += c_out[:,0,:]
-                            gunshot_predictions[start_idx*c_out.shape[0]:(start_idx+1)*c_out.shape[0]] += c_out[:,1,:]
-                            overlap_counts[start_idx*c_out.shape[0]:(start_idx+1)*c_out.shape[0]] += 1
-                            start_idx += 1
-
-                            pbar2.update(1)
-
-                        pbar2.close()
-                        # pool.close()
-                    # pool.join()
-
-                else:
-                    # pdb.set_trace()
-                    # start_idx is start of start index of predictions array
-                    # which is different than spect_idx which is start index of input array that jumps jump_size
-                    # every iteration
-                    start_idx = 0
-                    for spect_idx in tqdm(range(0, audio.shape[1], jump_size)):
+            # divide the spectrogram into equal parts, each part will be processed in a separate process
+            parameters.device = "cpu"
+            if parameters.device == "cpu":
+                print(f"Number of cpus: {cpu_count()}")
+                with ProcessPoolExecutor() as executor:
+                    s = time.time()
+                    
+                    for spect_idx in range(0, audio.shape[1], jump_size):
                         last_chunk_flag = False
                         spect_slice = audio[:, spect_idx:spect_idx + chunk_size]
-                        if (spect_idx + chunk_size > audio.shape[1]):
+                        if spect_slice.shape[1] < chunk_size:
                             last_chunk_flag = True
-                            if spect_slice.shape[1] < chunk_size:
-                                continue
-                        c_out = process_slice(spect_slice, model_0, last_chunk_flag,
-                                              rumble_predictions[spect_idx: ].shape[0])
-                        # if last_chunk_flag:
-                        #     predictions[start_idx: ] += c_out
-                        #     overlap_counts[start_idx: end_idx] += 1
-                        # pdb.set_trace()
-                        rumble_predictions[start_idx*c_out.shape[0]:(start_idx+1)*c_out.shape[0]] += c_out[:,0,:]
-                        gunshot_predictions[start_idx*c_out.shape[0]:(start_idx+1)*c_out.shape[0]] += c_out[:,1,:]
-                        overlap_counts[start_idx*c_out.shape[0]:(start_idx+1)*c_out.shape[0]] += 1
-                        start_idx += 1
-                
-                # Average the predictions on overlapping frames
-                rumble_predictions = rumble_predictions / overlap_counts
-                gunshot_predictions = gunshot_predictions / overlap_counts
+                            continue
 
-                # Get squashed [0, 1] predictions
-                rumble_predictions = sigmoid(rumble_predictions)
-                gunshot_predictions = sigmoid(gunshot_predictions)
-                
-                save_predictions(model_id, f'{data[1]}_rumble_prediction', model_1, None, rumble_predictions, args.predictions_path)
+                        processes.append(executor.submit(process_slice, spect_slice, model_0, 
+                                                            last_chunk_flag, rumble_predictions[spect_idx: ].shape[0]))
+                                        
+                    pbar2 = tqdm(total = len(processes))
+                    # wait for all processes to finish and collect predictions
+                    spect_idx = 0
+                    for process in as_completed(processes):
+                        c_out = process.result()
+                        c_out = np.hstack(c_out[:, 0:])
+                        rumble_predictions[int(spect_idx/sample_rate):int((spect_idx+chunk_size)/sample_rate)] += c_out[0]
+                        gunshot_predictions[int(spect_idx/sample_rate):int((spect_idx+chunk_size)/sample_rate)] += c_out[1]
+                        overlap_counts[int(spect_idx/sample_rate):int((spect_idx+chunk_size)/sample_rate)] += 1
+                        spect_idx +=jump_size
+                        pbar2.update(1)
+                    pbar2.close()
 
-                end = time.time()
-                print("total time taken this loop: ", end - start)
             else:
-                # Just leave out for now!
-                # predictions = predict_spec_full(spectrogram, model)
-                continue
+                # start_idx is start of start index of predictions array
+                # which is different than spect_idx which is start index of input array that jumps jump_size
+                # every iteration
+                pdb.set_trace()
+                for spect_idx in tqdm(range(0, audio.shape[1], jump_size)):
+                    last_chunk_flag = False
+                    spect_slice = audio[:, spect_idx:spect_idx + chunk_size]
+                    if spect_slice.shape[1] < chunk_size:
+                        last_chunk_flag = True
+                        continue
+                    c_out = process_slice(spect_slice, model_0, last_chunk_flag,
+                                            rumble_predictions[spect_idx: ].shape[0])
+                    c_out = np.hstack(c_out[:, 0:])
+                    rumble_predictions[int(spect_idx/sample_rate):int((spect_idx+chunk_size)/sample_rate)] += c_out[0]
+                    gunshot_predictions[int(spect_idx/sample_rate):int((spect_idx+chunk_size)/sample_rate)] += c_out[1]
+                    overlap_counts[int(spect_idx/sample_rate):int((spect_idx+chunk_size)/sample_rate)] += 1
+            # Average the predictions on overlapping frames
+            rumble_predictions = rumble_predictions / overlap_counts
+            gunshot_predictions = gunshot_predictions / overlap_counts
+
+            # Get squashed [0, 1] predictions
+            rumble_predictions = sigmoid(rumble_predictions)
+            gunshot_predictions = sigmoid(gunshot_predictions)
+            
+            save_predictions(model_id, f'{file_id}_rumble_prediction', rumble_predictions, args.predictions_path)
+            save_predictions(model_id, f'{file_id}_gunshot_prediction', gunshot_predictions, args.predictions_path)
+            end = time.time()
+            print("total time taken to get and save predictions: ", end - start)
 
     # if args.make_full_preds:
     #     generate_predictions_full_spectrograms(full_dataset, model_0, model_id, args.predictions_path,

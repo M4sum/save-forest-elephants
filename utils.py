@@ -6,6 +6,16 @@ import sklearn
 from sklearn.metrics import f1_score, precision_recall_fscore_support
 import os
 
+def save_predictions(model_id, data_id, predictions, predictions_path):
+# Save preditions
+        # Save for now to a folder determined by the model id
+        path = os.path.join(predictions_path,model_id)
+        if not os.path.isdir(path):
+            os.mkdir(path)
+
+        # The data id associates predictions with a particular spectrogram
+        np.save(os.path.join(path, data_id  + '.npy'), predictions)
+
 def set_seed(seed):
     """
         Set the seed across all different necessary platforms
