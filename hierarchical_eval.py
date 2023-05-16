@@ -25,7 +25,7 @@ import torch.nn as nn
 # from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
 from src.models.utils import load_model
-from utils import sigmoid, calc_accuracy, save_predictions, get_audio_paths
+from utils import sigmoid, calc_accuracy, save_predictions, get_file_paths
 from visualization import visualize_predictions
 
 
@@ -610,8 +610,9 @@ def find_elephant_calls(binary_preds, min_call_length=10, in_seconds=False, samp
         call_length = end - begin
 
         # Found a predicted call!
+        # pdb.set_trace()
         if (call_length >= min_call_length):
-            if not in_seconds:
+            if in_seconds:
                 # Note we subtract -1 to get the last frame 
                 # that has the actual call
                 calls.append((begin, end - 1, call_length))
@@ -821,7 +822,7 @@ def precision_recall_curve_pred_threshold(dataset, model_id, pred_path, num_poin
     plt.ylabel("Precision")
     plt.savefig("../Figures/PR_Curve_" + str(model_id))
 
-def extract_call_predictions(dataset, model_id, predictions_path, pred_threshold=0.5, smooth=True, 
+def extract_call_predictions(files, pred_threshold=0.5, smooth=True, 
             in_seconds=True, min_call_length=10, visualize=False):
     """
         Extract model predictions as calls of the form (start, end, length) 
@@ -832,13 +833,13 @@ def extract_call_predictions(dataset, model_id, predictions_path, pred_threshold
     results = {} 
     
     num_preds = 0
-    for data in full_dataset:
-        file_id = data[1]
-        print("Generating Prediction for:", file_id)
+    for file in files:
+        data_id = file[0]
+        print("Extracting Calls from:", data_id)
 
         # pdb.set_trace()
         
-        predictions = np.load(f"{predictions_path}/{model_id}/{file_id}_rumble.npy")
+        predictions = np.load(file[1])
 
         binary_preds, smoothed_predictions = get_binary_predictions(predictions, threshold=pred_threshold, smooth=smooth)
 
@@ -853,9 +854,9 @@ def extract_call_predictions(dataset, model_id, predictions_path, pred_threshold
             visual_full_recall(spectrogram, smoothed_predictions, labels, processed_preds)       
         
         
-        results[file_id] = predicted_calls
+        results[data_id] = (predicted_calls, smoothed_predictions)
        
-    return results, smoothed_predictions
+    return results
 
 
        
@@ -906,7 +907,7 @@ def visualize_elephant_call_metric(dataset, results, hierarchical_model=True):
         visualize_predictions(results[data_id]['true_pos_recall'], spectrogram, model_predictions, labels, 
                                 label="True Positive Recall", times=times)
 
-def create_predictions_csv(dataset, binary_predictions, predictions, save_path, in_seconds=False):
+def create_predictions_csv(files, results, save_path, in_seconds=True):
     """
         For each 24hr test file, output the model predictions
         in the form of the ground truth label files
@@ -914,19 +915,19 @@ def create_predictions_csv(dataset, binary_predictions, predictions, save_path, 
         Params:
         in_seconds - signifies that predictions are already converted to seconds
     """
-    pdb.set_trace()
+    # pdb.set_trace()
     dummy_low_freq = 5
     dummy_high_freq = 100
-    for data in full_dataset:
-        audio = data[0]
-        file_id = data[1]
+    for file in files:
+        data_id = file[0]
+        binary_predictions, predictions = results[data_id]
         
         # Get the spec id - stripping off the final tage '_gt.txt'
         # tags = gt_call_path.split('/')
         # last_tag = tags[-1]
         # data_id = last_tag[:-7]
         # wav_file = data_id + ".wav"
-        print ("Generating Prediction for:", file_id)
+        print ("creating selection table for:", data_id)
 
         # # Read the gt file to extract the "begin path" data_field
         # if labels is not None:
@@ -936,22 +937,22 @@ def create_predictions_csv(dataset, binary_predictions, predictions, save_path, 
         #         begin_path = str(row['Begin Path'])
         #         break
         # else:s
-        #     begin_path = file_id
+        begin_path = data_id
 
         # Save preditions
-        with open(os.path.join(save_path,f'{file_id}.txt'), 'w') as f:
+        with open(os.path.join(save_path,f'{data_id}.txt'), 'w') as f:
             # Create the hedding
-            f.write('Selection\tView\tChannel\tBegin Time (s)\tEnd Time (s)\tLow Freq (Hz)\tHigh Freq (Hz)\tBegin Path\tFile Offset (s)\tBegin File\tSite\thour\tfileDate\tdate(raven)\tTag 1\tTag 2\tnotes\tAnalyst\n')
+            f.write('Selection\tView\tChannel\tBegin Time (s)\tEnd Time (s)\tLow Freq (Hz)\tHigh Freq (Hz)\tFile Offset (s)\tBegin File\tSite\thour\tfileDate\tdate(raven)\tTag 1\tTag 2\tnotes\tAnalyst\n')
 
             # Get the site name
-            site_tags = file_id.split('_')
+            site_tags = data_id.split('_')
             site = site_tags[0]
             # File_offset
-            time_offset = int(site_tags[-1])
+            time_offset = int(site_tags[-2])
 
             # Output the individual predictions
             i = 1
-            for prediction in binary_predictions[file_id]:
+            for prediction in binary_predictions:
                 # Get the time in seconds
                 if in_seconds:
                     pred_start, pred_end, length = prediction
@@ -964,7 +965,7 @@ def create_predictions_csv(dataset, binary_predictions, predictions, save_path, 
 
                 file_offset = pred_start
 
-                f.write('{}\tSpectrogram 1\t1\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t\t\t\t\t\t{}\n'.format(i, pred_start, pred_end, dummy_low_freq, dummy_high_freq, begin_path, file_offset, wav_file, site, Hs, "AI"))
+                f.write('{}\tSpectrogram 1\t1\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t\t\t\t\t\t{}\n'.format(i, pred_start, pred_end, dummy_low_freq, dummy_high_freq, file_offset, data_id, site, Hs, "AI"))
                 i += 1
 
 
@@ -1004,7 +1005,7 @@ if __name__ == '__main__':
     if not os.path.isdir(args.call_predictions_path):
         os.mkdir(args.call_predictions_path)
 
-    full_test_spect_paths = get_audio_paths(args.data_path)
+    full_test_spect_paths = get_file_paths(args.data_path)
 
     # Include flag indicating if we are just making predictions with no labels
     full_dataset = ElephantDatasetFull(full_test_spect_paths)
@@ -1136,13 +1137,18 @@ if __name__ == '__main__':
                                                 args.pr_curve, args.overlaps, 
                                                 min_call_length=parameters.MIN_CALL_LENGTH)
     elif args.save_calls:
-        binary_predictions, predictions= extract_call_predictions(full_dataset, model_id, args.predictions_path, 
-                    min_call_length=parameters.MIN_CALL_LENGTH, pred_threshold=parameters.EVAL_THRESHOLD)
+        files = get_file_paths(os.path.join(args.predictions_path, model_id))
+
+        # returns a dictionary with key as data_id and value as (binary_prediction, smoothed_prediction)
+        results = extract_call_predictions(files, 
+                                            min_call_length=parameters.MIN_CALL_LENGTH, 
+                                            pred_threshold=parameters.EVAL_THRESHOLD)
+        
         # Save for now to a folder determined by the model id
         save_path = os.path.join(args.call_predictions_path,model_id)
         if not os.path.isdir(save_path):
             os.mkdir(save_path)
         # Save the predictions
-        create_predictions_csv(full_dataset, binary_predictions, predictions, save_path)
+        create_predictions_csv(files, results, save_path)
     
     print(f"Time taken to run inference and save results: {time.time() - start}")

@@ -7,11 +7,10 @@ from sklearn.metrics import f1_score, precision_recall_fscore_support
 import os
 import pdb
 
-def get_audio_paths(dir_path):
+def get_file_paths(dir_path):
     paths = []
     for f in os.listdir(dir_path):
-        # currently all audio files are wav
-        if os.path.isfile(os.path.join(dir_path, f)) and f.split('.')[-1] == "wav":
+        if os.path.isfile(os.path.join(dir_path, f)) and f.split('.')[-1] != "DS_Store":
             file_id = f.split(".")[0]
             paths.append((file_id, os.path.join(dir_path,f)))
     return paths
