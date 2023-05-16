@@ -5,16 +5,55 @@ import torch.nn as nn
 import sklearn
 from sklearn.metrics import f1_score, precision_recall_fscore_support
 import os
+import pdb
+
+def get_audio_paths(dir_path):
+    paths = []
+    for f in os.listdir(dir_path):
+        # currently all audio files are wav
+        if os.path.isfile(os.path.join(dir_path, f)) and f.split('.')[-1] == "wav":
+            file_id = f.split(".")[0]
+            paths.append((file_id, os.path.join(dir_path,f)))
+    return paths
+
+def format_paths(spect_dir_path, spect_out_path, model_0_path, model_1_path, result_dir_path, spect_path_path):
+    relevant_paths = [spect_dir_path, spect_out_path, model_0_path, model_1_path, result_dir_path, spect_path_path]
+    for i, current_path in enumerate(relevant_paths):
+        if current_path is None:
+            continue
+        # Split the input path into its components
+        path_components = path_split_agnostic(current_path)
+        # Rejoin the path components into a path string
+        path = os.path.join(*path_components)
+        relevant_paths[i] = path
+
+    return relevant_paths[0], relevant_paths[1], relevant_paths[2], relevant_paths[3], relevant_paths[4], relevant_paths[5]
+
+
+def path_split_agnostic(input_path):
+    # Split the input path into its components
+    path_components = []
+    while True:
+        input_path, tail = os.path.split(input_path)
+        if tail:
+            path_components.insert(0, tail)
+        else:
+            if input_path:
+                path_components.insert(0, input_path)
+            break
+
+    return path_components
+
 
 def save_predictions(model_id, data_id, predictions, predictions_path):
-# Save preditions
-        # Save for now to a folder determined by the model id
-        path = os.path.join(predictions_path,model_id)
-        if not os.path.isdir(path):
-            os.mkdir(path)
+    # Save preditions
+    # Save for now to a folder determined by the model id
+    path = os.path.join(predictions_path,model_id)
+    if not os.path.isdir(path):
+        os.mkdir(path)
 
-        # The data id associates predictions with a particular spectrogram
-        np.save(os.path.join(path, data_id  + '.npy'), predictions)
+    # The data id associates predictions with a particular spectrogram
+    np.save(os.path.join(path,f'{data_id}.npy'), predictions)
 
 def set_seed(seed):
     """
@@ -306,7 +345,35 @@ def multi_class_precission_recall_values(logits, labels):
     return tp, tp_fp, tp_fn
 
 
+def get_spectrogram_paths(test_files_path, spectrogram_path):
+    """
+        In the test set folder, there is a file that includes
+        all of the recording files used for the test set. Based
+        on these files we want to get the spectrograms and gt
+        labeling files that correspond
+    """
+    # Holds the paths to the:
+    # - spectrograms
+    # - labels for each spectrogram slice
+    # - gt (start, end) times for calls
+    paths = {'spec': [],
+            'label': [],
+            'gt': []}
+    # pdb.set_trace()
+    with open(test_files_path, 'r') as f:
+        lines = f.readlines()
 
+    files = [x.strip() for x in lines]
+
+    for file in files:
+        # Create the spectrogram path by concatenating
+        # the test file with the path to the folder
+        # containing the spectrogram files
+        paths['spec'].append(spectrogram_path + '/' + file + '_spec.npy')
+        paths['label'].append(spectrogram_path + '/' + file + '_label.npy')
+        paths['gt'].append(spectrogram_path + '/' + file + '_gt.txt')             
+
+    return paths
 
 
 

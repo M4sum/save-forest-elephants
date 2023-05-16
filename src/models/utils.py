@@ -1,5 +1,6 @@
 import torch
-
+import pdb
+import os
 from src.models.AbstractModel import AbstractModel
 from src.models.SimpleTransformerModel import create_simple_transformer_model
 
@@ -39,4 +40,4 @@ def load_model(path: str) -> AbstractModel:
     config = saved_model['config']
     model = get_model(config)
     model.load_state_dict(saved_model['model_state_dict'])
-    return model
+    return model, os.path.split(path)[-1].split(".")[0]

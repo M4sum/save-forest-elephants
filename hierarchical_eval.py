@@ -25,7 +25,7 @@ import torch.nn as nn
 # from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
 from src.models.utils import load_model
-from utils import sigmoid, calc_accuracy, save_predictions
+from utils import sigmoid, calc_accuracy, save_predictions, get_audio_paths
 from visualization import visualize_predictions
 
 
@@ -37,7 +37,7 @@ parser.add_argument('--call_preds_path', type=str, dest='call_predictions_path',
 
 # Defaults based on quatro
 parser.add_argument('--test_files', type=str, default='/home/data/elephants/processed_data/Test_nouab/Neg_Samples_x1/files.txt')
-parser.add_argument('--spect_path', type=str, default="/home/data/elephants/rawdata/Spectrograms/nouabale_general_test/", 
+parser.add_argument('--data_path', type=str, default="/home/data/elephants/rawdata/Spectrograms/nouabale_general_test/", 
     help='Path to the processed spectrogram files')
 
 # Special flag to specify that we are just making predictoins and not comparing against ground truth!
@@ -71,10 +71,10 @@ Example runs
 
 # Make predictions 
 # To customize change the model flag!
-python eval.py --spect_path /home/data/elephants/rawdata/Spectrograms/nouabale\ ele\ general\ test\ sounds/ --model /home/data/elephants/models/selected_runs/Adversarial_training_17_nouab_and_bai_0.25_sampling_one_model/Call_model_17_norm_Negx1_Seed_8_2020-04-28_01:58:26/model_adversarial_iteration_9_.pt --make_full_pred
+python eval.py --data_path /home/data/elephants/rawdata/Spectrograms/nouabale\ ele\ general\ test\ sounds/ --model /home/data/elephants/models/selected_runs/Adversarial_training_17_nouab_and_bai_0.25_sampling_one_model/Call_model_17_norm_Negx1_Seed_8_2020-04-28_01:58:26/model_adversarial_iteration_9_.pt --make_full_pred
 
 # Calculate Stats 
-python eval.py --test_files /home/data/elephants/processed_data/Test_nouab/Neg_Samples_x1/files.txt --spect_path /home/data/elephants/rawdata/Spectrograms/nouabale\ ele\ general\ test\ sounds/ --model /home/data/elephants/models/selected_runs/Adversarial_training_17_nouab_and_bai_0.25_sampling_one_model/Call_model_17_norm_Negx1_Seed_8_2020-04-28_01:58:26/model_adversarial_iteration_9_.pt --full_stats
+python eval.py --test_files /home/data/elephants/processed_data/Test_nouab/Neg_Samples_x1/files.txt --data_path /home/data/elephants/rawdata/Spectrograms/nouabale\ ele\ general\ test\ sounds/ --model /home/data/elephants/models/selected_runs/Adversarial_training_17_nouab_and_bai_0.25_sampling_one_model/Call_model_17_norm_Negx1_Seed_8_2020-04-28_01:58:26/model_adversarial_iteration_9_.pt --full_stats
 '''
 
 
@@ -822,7 +822,7 @@ def precision_recall_curve_pred_threshold(dataset, model_id, pred_path, num_poin
     plt.savefig("../Figures/PR_Curve_" + str(model_id))
 
 def extract_call_predictions(dataset, model_id, predictions_path, pred_threshold=0.5, smooth=True, 
-            in_seconds=False, min_call_length=10, visualize=False):
+            in_seconds=True, min_call_length=10, visualize=False):
     """
         Extract model predictions as calls of the form (start, end, length) 
         and save each call for with its given audio file
@@ -838,7 +838,7 @@ def extract_call_predictions(dataset, model_id, predictions_path, pred_threshold
 
         # pdb.set_trace()
         
-        predictions = np.load(predictions_path + '/' + model_id + "/" + file_id + '.npy')
+        predictions = np.load(f"{predictions_path}/{model_id}/{file_id}_rumble.npy")
 
         binary_preds, smoothed_predictions = get_binary_predictions(predictions, threshold=pred_threshold, smooth=smooth)
 
@@ -914,45 +914,44 @@ def create_predictions_csv(dataset, binary_predictions, predictions, save_path, 
         Params:
         in_seconds - signifies that predictions are already converted to seconds
     """
+    pdb.set_trace()
     dummy_low_freq = 5
     dummy_high_freq = 100
-    for data in dataset:
-        spectrogram = data[0]
-        labels = data[1]
-        gt_call_path = data[2]
+    for data in full_dataset:
+        audio = data[0]
+        file_id = data[1]
         
         # Get the spec id - stripping off the final tage '_gt.txt'
-        tags = gt_call_path.split('/')
-        last_tag = tags[-1]
-        data_id = last_tag[:-7]
-        wav_file = data_id + ".wav"
-        print ("Generating Prediction for:", data_id)
+        # tags = gt_call_path.split('/')
+        # last_tag = tags[-1]
+        # data_id = last_tag[:-7]
+        # wav_file = data_id + ".wav"
+        print ("Generating Prediction for:", file_id)
 
-        # Read the gt file to extract the "begin path" data_field
-        if labels is not None:
-            gt_file = csv.DictReader(open(gt_call_path,'rt'), delimiter='\t')
-            for row in gt_file:
-                # Use the file offset to determine the start of the call
-                begin_path = str(row['Begin Path'])
-                break
-        else:
-            begin_path = wav_file
+        # # Read the gt file to extract the "begin path" data_field
+        # if labels is not None:
+        #     gt_file = csv.DictReader(open(gt_call_path,'rt'), delimiter='\t')
+        #     for row in gt_file:
+        #         # Use the file offset to determine the start of the call
+        #         begin_path = str(row['Begin Path'])
+        #         break
+        # else:s
+        #     begin_path = file_id
 
         # Save preditions
-        with open(save_path + '/' + data_id + '.txt', 'w') as f:
+        with open(os.path.join(save_path,f'{file_id}.txt'), 'w') as f:
             # Create the hedding
             f.write('Selection\tView\tChannel\tBegin Time (s)\tEnd Time (s)\tLow Freq (Hz)\tHigh Freq (Hz)\tBegin Path\tFile Offset (s)\tBegin File\tSite\thour\tfileDate\tdate(raven)\tTag 1\tTag 2\tnotes\tAnalyst\n')
 
             # Get the site name
-            site_tags = data_id.split('_')
+            site_tags = file_id.split('_')
             site = site_tags[0]
-
             # File_offset
             time_offset = int(site_tags[-1])
 
             # Output the individual predictions
             i = 1
-            for prediction in binary_predictions[data_id]:
+            for prediction in binary_predictions[file_id]:
                 # Get the time in seconds
                 if in_seconds:
                     pred_start, pred_end, length = prediction
@@ -968,36 +967,6 @@ def create_predictions_csv(dataset, binary_predictions, predictions, save_path, 
                 f.write('{}\tSpectrogram 1\t1\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t\t\t\t\t\t{}\n'.format(i, pred_start, pred_end, dummy_low_freq, dummy_high_freq, begin_path, file_offset, wav_file, site, Hs, "AI"))
                 i += 1
 
-
-def get_spectrogram_paths(test_files_path, spectrogram_path):
-    """
-        In the test set folder, there is a file that includes
-        all of the recording files used for the test set. Based
-        on these files we want to get the spectrograms and gt
-        labeling files that correspond
-    """
-    # Holds the paths to the:
-    # - spectrograms
-    # - labels for each spectrogram slice
-    # - gt (start, end) times for calls
-    paths = {'spec': [],
-            'label': [],
-            'gt': []}
-    # pdb.set_trace()
-    with open(test_files_path, 'r') as f:
-        lines = f.readlines()
-
-    files = [x.strip() for x in lines]
-
-    for file in files:
-        # Create the spectrogram path by concatenating
-        # the test file with the path to the folder
-        # containing the spectrogram files
-        paths['spec'].append(spectrogram_path + '/' + file + '_spec.npy')
-        paths['label'].append(spectrogram_path + '/' + file + '_label.npy')
-        paths['gt'].append(spectrogram_path + '/' + file + '_gt.txt')             
-
-    return paths
 
 def process_slice(spect_slice, model, last_chunk_flag, last_chunk_id):
     with torch.no_grad():
@@ -1024,10 +993,9 @@ if __name__ == '__main__':
     model_0_path = args.model_0
 
     # Want the model id to match that of the second model! Then 
-    model_0 = load_model(model_0_path)
+    model_0, model_id = load_model(model_0_path)
     model_0.eval()
 
-    model_id = model_0_path.split("/")[1][:-3]
     print ("Using Model with ID:", model_id)
 
     # Need to make sure the save paths exist!
@@ -1036,8 +1004,7 @@ if __name__ == '__main__':
     if not os.path.isdir(args.call_predictions_path):
         os.mkdir(args.call_predictions_path)
 
-    # full_test_spect_paths = get_spectrogram_paths(args.test_files, args.spect_path)
-    full_test_spect_paths = [os.path.join("Rumble",f) for f in os.listdir(args.spect_path) if os.path.isfile(os.path.join(args.spect_path, f))][1:]
+    full_test_spect_paths = get_audio_paths(args.data_path)
 
     # Include flag indicating if we are just making predictions with no labels
     full_dataset = ElephantDatasetFull(full_test_spect_paths)
@@ -1117,8 +1084,8 @@ if __name__ == '__main__':
             rumble_predictions = sigmoid(rumble_predictions)
             gunshot_predictions = sigmoid(gunshot_predictions)
             
-            save_predictions(model_id, f'{file_id}_rumble_prediction', rumble_predictions, args.predictions_path)
-            save_predictions(model_id, f'{file_id}_gunshot_prediction', gunshot_predictions, args.predictions_path)
+            save_predictions(model_id, f'{file_id}_rumble', rumble_predictions, args.predictions_path)
+            save_predictions(model_id, f'{file_id}_gunshot', gunshot_predictions, args.predictions_path)
             end = time.time()
             print("total time taken to get and save predictions: ", end - start)
 
@@ -1169,11 +1136,10 @@ if __name__ == '__main__':
                                                 args.pr_curve, args.overlaps, 
                                                 min_call_length=parameters.MIN_CALL_LENGTH)
     elif args.save_calls:
-        # pdb.set_trace()
         binary_predictions, predictions= extract_call_predictions(full_dataset, model_id, args.predictions_path, 
                     min_call_length=parameters.MIN_CALL_LENGTH, pred_threshold=parameters.EVAL_THRESHOLD)
         # Save for now to a folder determined by the model id
-        save_path = args.call_predictions_path + '/' + model_id
+        save_path = os.path.join(args.call_predictions_path,model_id)
         if not os.path.isdir(save_path):
             os.mkdir(save_path)
         # Save the predictions

@@ -629,16 +629,16 @@ class SpectrogramDataset(Dataset):
     NEED TO FIX THIS!!
 """
 class ElephantDatasetFull(data.Dataset):
-    def __init__(self, spectrogram_files, preprocess="norm", 
+    def __init__(self, audio_files, preprocess="norm", 
                     scale=True):
 
-        self.specs = spectrogram_files        
+        self.files = audio_files        
 
     def __len__(self):
         return len(self.specs)
 
     def __getitem__(self, index):
-        audio_path = self.specs[index]
+        file_id, audio_path = self.files[index]
         _, audio = wavfile.read(audio_path)
 
-        return audio, audio_path.split("/")[1][:-4]
+        return audio, file_id
