@@ -572,7 +572,7 @@ def process_ground_truth(label_path, in_seconds=False, samplerate=8000, NFFT=409
     return calls
 
 
-def find_elephant_calls(binary_preds, min_call_length=10, in_seconds=False, samplerate=8000., NFFT=4096., hop=800.): # Was 3208, 641
+def find_elephant_calls(binary_preds, predictions, min_call_length=10, in_seconds=False, samplerate=8000., NFFT=4096., hop=800.): # Was 3208, 641
     """
         Given a binary predictions vector, we now want
         to step through and locate all of the elephant
@@ -610,12 +610,13 @@ def find_elephant_calls(binary_preds, min_call_length=10, in_seconds=False, samp
         call_length = end - begin
 
         # Found a predicted call!
-        # pdb.set_trace()
         if (call_length >= min_call_length):
+
             if in_seconds:
                 # Note we subtract -1 to get the last frame 
                 # that has the actual call
-                calls.append((begin, end - 1, call_length))
+
+                calls.append((begin, end - 1, call_length, np.mean(predictions[begin:end]), np.median(predictions[begin:end])))
             else:
                 # Frame k is centered around second
                 # (NFFT / sr / 2) + (k) * (hop / sr)
@@ -629,7 +630,7 @@ def find_elephant_calls(binary_preds, min_call_length=10, in_seconds=False, samp
                 #call_length_s = (NFFT / samplerate) + (call_length - 1) * (hop / samplerate)
                 begin_s, end_s, call_length_s = spect_call_to_time((begin, end-1, call_length))
 
-                calls.append((begin_s, end_s, call_length_s))
+                calls.append((begin_s, end_s, call_length_s, np.mean(predictions[begin_s:end_s]), np.median(predictions[begin:end])))
         else: # zero out the too short predictions
             processed_preds[begin:end] = 0
 
@@ -846,7 +847,7 @@ def extract_call_predictions(files, pred_threshold=0.5, smooth=True,
         # Process the predictions to get predicted elephant calls
         # Note that processed_preds zeros out predictions that are not long
         # enough to be an elephant call
-        predicted_calls, processed_preds = find_elephant_calls(binary_preds, min_call_length=min_call_length, in_seconds=in_seconds)
+        predicted_calls, processed_preds = find_elephant_calls(binary_preds, smoothed_predictions, min_call_length=min_call_length, in_seconds=in_seconds)
         print ("Num predicted calls", len(predicted_calls))
 
         # Visualize the predictions around the gt calls
@@ -937,12 +938,11 @@ def create_predictions_csv(files, results, save_path, in_seconds=True):
         #         begin_path = str(row['Begin Path'])
         #         break
         # else:s
-        begin_path = data_id
 
         # Save preditions
         with open(os.path.join(save_path,f'{data_id}.txt'), 'w') as f:
             # Create the hedding
-            f.write('Selection\tView\tChannel\tBegin Time (s)\tEnd Time (s)\tLow Freq (Hz)\tHigh Freq (Hz)\tFile Offset (s)\tBegin File\tSite\thour\tfileDate\tdate(raven)\tTag 1\tTag 2\tnotes\tAnalyst\n')
+            f.write('Selection\tView\tChannel\tBegin Time (s)\tEnd Time (s)\tAvg Probability (%)\tMedian Probability (%)\tLow Freq (Hz)\tHigh Freq (Hz)\tFile Offset (s)\tBegin File\tSite\thour\tfileDate\tdate(raven)\tTag 1\tTag 2\tnotes\tAnalyst\n')
 
             # Get the site name
             site_tags = data_id.split('_')
@@ -955,7 +955,7 @@ def create_predictions_csv(files, results, save_path, in_seconds=True):
             for prediction in binary_predictions:
                 # Get the time in seconds
                 if in_seconds:
-                    pred_start, pred_end, length = prediction
+                    pred_start, pred_end, length, avg_probability, median_probability = prediction
                 else:
                     # This is unused for now!
                     pred_start, pred_end, length = spect_call_to_time(prediction)
@@ -965,7 +965,7 @@ def create_predictions_csv(files, results, save_path, in_seconds=True):
 
                 file_offset = pred_start
 
-                f.write('{}\tSpectrogram 1\t1\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t\t\t\t\t\t{}\n'.format(i, pred_start, pred_end, dummy_low_freq, dummy_high_freq, file_offset, data_id, site, Hs, "AI"))
+                f.write('{}\tSpectrogram 1\t1\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t\t\t\t\t\t{}\n'.format(i, pred_start, pred_end, avg_probability*100, median_probability*100, dummy_low_freq, dummy_high_freq, file_offset, data_id, site, Hs, "AI"))
                 i += 1
 
 
