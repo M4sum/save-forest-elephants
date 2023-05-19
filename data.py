@@ -1,17 +1,8 @@
-import asyncio
-from helper import load_spectrograms
 import matplotlib.pyplot as plt
 import numpy as np
-import pdb
 import torch
-import time
-# import aifc
-from scipy import signal
 from torch.utils import data
-# from torchvision import transforms
 import os
-# from torch.utils.data.sampler import SubsetRandomSampler
-# from sklearn.preprocessing import StandardScaler, MinMaxScaler
 import glob
 import parameters
 from torch.utils.data import Dataset, DataLoader
@@ -608,7 +599,6 @@ class SpectrogramDataset(Dataset):
         return np.ceil(self.total_length/self.jump_size)
     
     def __getitem__(self, index):
-        pdb.set_trace()
         # spectrogram = np.expand_dims(spectrogram,axis=0)
         index = index*self.jump_size
         if index >= np.ceil(self.spectrogram.shape[0]/self.jump_size):

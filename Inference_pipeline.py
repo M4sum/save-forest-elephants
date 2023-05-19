@@ -38,14 +38,11 @@ python Inference_pipeline.py --make_predictions --model_0 2_Stage_Model/first_st
 
 """
 
-import temp_spectrogramer
-import temp_spectrogramer_compare_time
 import argparse
 import subprocess
 import sys
 import os
 import time
-import pdb
 
 parser = argparse.ArgumentParser()
 

@@ -1,54 +1,45 @@
 README
-    This is the README for the 'Inference_pipeline.py' script used for processing data and running 
-    the 2-stage model for elephant call prediction. 
+    This is the README for the 'inference.py' script used for processing data and running the simple transformer model for elephant call prediction. 
 
-    This script runs the inferance prediction pipeline.
+    This script runs the inference prediction pipeline.
     The prediction pipeline consists of 2 main components:
 
-        1) Data processing. Given a directory with .wav files,
-        generate the corresponding spectrogram representations.
+        1) Predict call for each second using the transformer model.
 
-        2) Generate 2-stage model predictions:
-
-            2a) Generate 2-stage model segmentation. Predict 
-            the 0/1 time segmentation given the 2-stage model.
-
-            2b) Elephant call prediction. Output the models
-            predictions for start / end times of calls 
-            in csv formatt.
+        2) Elephant call prediction. Output the models
+        predictions for start / end times of calls 
+        in txt format.
 
     The script allows for complete and partial runs of the 2 steps above:
 
-        - Flag '--process_data': Process the '.wav' files (step 1).
+        - Flag '--make_full_preds': Process the '.wav' files (step 1).
 
-        - Flag '--make_predictions': Generate elephant call predictions (step 2). 
+        - Flag '--save_calls': Generate elephant call predictions (step 2). 
+
+    Additional command line args:
+
+        - Flag '--model': Path to transformer model
+
+        - Flag '--data_path': Path to directory where audio files are stored.
+
+        - Flag '--preds_path': Path ot directory where prediction arrays are stored.
+
+        - Flag '--call_preds_path': Path to directory where selection tables are stored.
+
+        - Flag '--device': device to run model on i.e. 'cpu' or 'gpu'. Note: if gpu is not cuda supported, it might throw an error.
     
-    For each part of the pipeline, command line arguments are used to properly 
-    specify necessary data.
+    For each part of the pipeline, command line arguments are used to properly specify necessary data, model path and device to run on (cpu or gpu).
 
 KEY FILES
-    This folder contains all of the python scripts needed to run the primary script
-    'Inference_pipeline.py'. Additionally, the folder '2_Stage_Model/' contains
-    the components of the 2-stage model. 
+    This folder contains all of the python scripts needed to run the primary script 'inference.py'. Additionally, the folder 'Model/' contains the model. 
 
-    When you run the script, unless otherwise specified, the default location for 
-    outputed values are as follows:
+    When you run the script, unless otherwise specified, the default location for output values are as follows: (this steps need to be confirmed, so we recommend always specifyig output paths)
 
-        - Processed Spectrograms: By default a folder 'Spectrograms/' will be 
-        created in this directory containing the processed spectrograms. Specifically,
-        these processed spectrograms will exist in a sub-directory of 'Spectrograms/'
-        with name based on the folder containing the original '.wav' files. To change
-        this default data location use the flag '--spect_out'
+        - Predicted numpy array: This is used for the model to save its predictions before post processing to get the actual start/end times. This will be saved in a folder called 'Predictions/'. (This might be a redundant operation, more to be investigated)
 
-        - Model 0/1 segmentations: You will not need to use this data! This is just
-        used for the model to save its segmentations before post processing to 
-        get the actual start/end times. This will be saved in a folder called
-        'Predictions/'.
+        - Model start/end elephant predictions: This folder called 'Call_Predictions/' will contain the txt prediction files (selection tables) for each of the recording days!
 
-        - Model start/end elephant predictions: This folder called 'Call_Predictions/'
-        will contain the csv prediction files for each of the recording days!
-
-    Lastly, the data folder with the '.wav' files does not need to exist in this folder!
+    Lastly, the data folder with the '.wav' files can exist in any folder. the path just needs to be specified correctly in the comand line argument.
 
 SETUP
     Below are a few basic instructions on how to create an anaconda environment and how 
@@ -56,33 +47,40 @@ SETUP
 
     Setting up an anaconda environment:
 
-        > conda create -n peter python=3.7.8
-        > conda activate peter
-        > python setup.py install
+        > conda create --name <name_of_env> --file requirements.txt
+        > conda activate <name_of_env>
+
+    If it gives a PackagesNotFoundError, use this command to search packages on more channels.
+
+        > conda config --append channels conda-forge
 
     Note: Do not include the '>' character when copying the command
 
-    After running these three lines you should be all good to try the example
+    After running these two lines you should be all good to try the example
     runs below!
 
 
 EXAMPLE RUNS
 
-Help:
-python Inference_pipeline.py --help
+Note: It requires python 3.7 and above, preferrably python 3.8
+
+Generate Predictions:
+python inference.py --make_full_preds --model Model/simple_transformer.pt --data_path <path_to_data_directory> --preds_path <output_path_to_predictions> --call_preds_path <output_path_to_selection_tables> --device <cpu_or_gpu>
+
+------------------------------------
+
+Generate selection table from Predictions:
+python inference.py --save_calls --model Model/simple_transformer.pt --data_path <path_to_data_directory> --preds_path <output_path_to_predictions> --call_preds_path <output_path_to_selection_tables> --device <cpu_or_gpu>
 
 ------------------------------------
 
 Full Pipeline:
-python Inference_pipeline.py --process_data --data_dir <data directory> --spect_out <output directory> --make_predictions --model_0 2_Stage_Model/first_stage.pt --model_1 2_Stage_Model/second_stage.pt
+python inference.py --make_full_preds --save_calls --model Model/simple_transformer.pt --data_path <path_to_data_directory> --preds_path <output_path_to_predictions> --call_preds_path <output_path_to_selection_tables> --device <cpu_or_gpu>
 
 ------------------------------------
 
-Data Generation:
-python Inference_pipeline.py --process_data --data_dir <data directory> --spect_out <output directory> 
+Improvement Notes:
 
-------------------------------------
-
-Model Predictions:
-python Inference_pipeline.py --make_predictions --model_0 2_Stage_Model/first_stage.pt --model_1 2_Stage_Model/second_stage.pt --spect_path <directory with processed spectrograms>
-
+1. The code currently has bad error handling so paths must be set correctly.
+2. Currently the model skips last chunk of audio files if the size is less than 10 seconds.
+3. 

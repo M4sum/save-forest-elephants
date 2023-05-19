@@ -86,7 +86,6 @@ def generate_spectogram(raw_audio, spectrogram_info, id, chunk_size=1000):
 
     # Generate the spectogram in chunks of 1000 frames i.e. take 1000 spectrogram chunks as 1 array.
     # Length of 1 such large chunk would be
-    # pdb.set_trace()
     len_chunk = (chunk_size - 1) * hop + NFFT
 
     # Calculate number of chunks i.e ((total_length - window_size) / jump_size) +1

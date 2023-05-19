@@ -8,7 +8,7 @@ import torch.nn as nn
 #from sklearn.metrics import precision_recall_curve
 from data import get_loader, get_loader_fuzzy
 from torchsummary import summary
-import time
+# import time
 # from tensorboardX import SummaryWriter
 #import sklearn
 #import sys
@@ -19,7 +19,6 @@ import torch.nn.functional as F
 import parameters
 from visualization import visualize
 import torchvision.models as models
-import pdb
 #from torchvision import transforms
 #import matplotlib
 #import matplotlib.pyplot as plt

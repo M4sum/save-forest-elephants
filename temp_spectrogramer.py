@@ -1,16 +1,9 @@
-import generate_spectrograms
 import argparse
 import numpy as np
-from scipy.io import wavfile
 from os import path
 import os
 from time import time
-import librosa
-# import miniaudio
-# import resampy
-import soundfile as sf
-from multiprocessing import Pool, cpu_count
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from matplotlib import mlab as ml
 
 TARGET_SR = 8000
@@ -127,7 +120,6 @@ if __name__ == '__main__':
                 with ProcessPoolExecutor() as executor:
                     for audio_idx in range(0, raw_audio.shape[0], len_chunk - NFFT + hop):
                         print(f'Chunk number {audio_idx}: {data_id}')
-                        # pdb.set_trace()
                         audio_slice = raw_audio[audio_idx: audio_idx + len_chunk]
                         processes.append(executor.submit(audio_slice_to_spectogram, audio_slice, audio_idx,
                                                          NFFT, samplerate, NFFT-hop, pad_to, max_freq))
@@ -139,7 +131,6 @@ if __name__ == '__main__':
                     first_chunk = None
                     last_chunk = None
                     for process in as_completed(processes):
-                        # pdb.set_trace()
                         spect_chunk, spect_idx = process.result()
                         idx_number = int(spect_idx/len_chunk)       # results not returned in correct order so need to use this
                         if i == 0:

@@ -2,10 +2,9 @@ import parameters
 import numpy as np
 import torch
 import torch.nn as nn
-import sklearn
 from sklearn.metrics import f1_score, precision_recall_fscore_support
 import os
-import pdb
+
 
 def get_file_paths(dir_path):
     paths = []
@@ -358,7 +357,6 @@ def get_spectrogram_paths(test_files_path, spectrogram_path):
     paths = {'spec': [],
             'label': [],
             'gt': []}
-    # pdb.set_trace()
     with open(test_files_path, 'r') as f:
         lines = f.readlines()
 
@@ -374,8 +372,31 @@ def get_spectrogram_paths(test_files_path, spectrogram_path):
 
     return paths
 
+def loadModel(model_path):
+    model = torch.load(model_path, map_location=parameters.device)
+    # print (model)
+    # Get the model name from the path
+    tokens = model_path.split('/')
+    # The normal hierarchical model has two components: 
+    # 1) The name with the data params etc.
+    # 2) The actual model0/1 architecture
+    # NOTE: For Peter I just give the model as a Folder with the two
+    # model.pts. In this case use the Folder name as the model_id 
+    if len(tokens) > 3:
+        model_id = tokens[-3] + "_" + tokens[-2]
+    else:
+        model_id = tokens[-2]
 
+    # Let us also save_predictions based on some of the slide length 
+    # when sliding the window for model predictions
+    if parameters.PREDICTION_SLIDE_LENGTH != 128:
+        model_id += "_Slide" + str(parameters.PREDICTION_SLIDE_LENGTH)
 
+    return model, model_id
 
+def load_spectrograms(filename, file_id):
+    with open(filename, 'rb') as f:
+        spectrogram = np.load(f)
+    return spectrogram, file_id
 
 
