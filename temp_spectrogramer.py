@@ -14,7 +14,7 @@ This file is just temporary to generate spectrograms without labels for testing 
 Peter's new data! Assumes we only want to process .wav files.
 
 Let us also create a file at the end with all of the specs createdddd
-"""
+""" 
 
 def audio_slice_to_spectogram(audio_chunk, idx, nfft, sr, noverlap, pad, max_f):
     [spectrum_chunk, freqs_chunk, t_chunk] = ml.specgram(audio_chunk,

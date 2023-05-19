@@ -62,25 +62,25 @@ SETUP
 
 EXAMPLE RUNS
 
-Note: It requires python 3.7 and above, preferrably python 3.8
+    Note: It requires python 3.7 and above, preferrably python 3.8
 
-Generate Predictions:
-python inference.py --make_full_preds --model Model/simple_transformer.pt --data_path <path_to_data_directory> --preds_path <output_path_to_predictions> --call_preds_path <output_path_to_selection_tables> --device <cpu_or_gpu>
+    Generate Predictions:
+    python inference.py --make_full_preds --model Model/simple_transformer.pt --data_path <path_to_data_directory> --preds_path <output_path_to_predictions> --call_preds_path <output_path_to_selection_tables> --device <cpu_or_gpu>
 
-------------------------------------
+    ------------------------------------
 
-Generate selection table from Predictions:
-python inference.py --save_calls --model Model/simple_transformer.pt --data_path <path_to_data_directory> --preds_path <output_path_to_predictions> --call_preds_path <output_path_to_selection_tables> --device <cpu_or_gpu>
+    Generate selection table from Predictions:
+    python inference.py --save_calls --model Model/simple_transformer.pt --data_path <path_to_data_directory> --preds_path <output_path_to_predictions> --call_preds_path <output_path_to_selection_tables> --device <cpu_or_gpu>
 
-------------------------------------
+    ------------------------------------
 
-Full Pipeline:
-python inference.py --make_full_preds --save_calls --model Model/simple_transformer.pt --data_path <path_to_data_directory> --preds_path <output_path_to_predictions> --call_preds_path <output_path_to_selection_tables> --device <cpu_or_gpu>
+    Full Pipeline:
+    python inference.py --make_full_preds --save_calls --model Model/simple_transformer.pt --data_path <path_to_data_directory> --preds_path <output_path_to_predictions> --call_preds_path <output_path_to_selection_tables> --device <cpu_or_gpu>
 
-------------------------------------
+    ------------------------------------
 
-Improvement Notes:
+    Improvement Notes:
 
-1. The code currently has bad error handling so paths must be set correctly.
-2. Currently the model skips last chunk of audio files if the size is less than 10 seconds.
-3. 
+    1. The code currently has bad error handling so paths must be set correctly.
+    2. Currently the model skips last chunk of audio files if the size is less than 10 seconds.
+    3. Add docstrings
