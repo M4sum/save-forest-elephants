@@ -47,16 +47,13 @@ SETUP
 
     Setting up an anaconda environment:
 
-        > conda create --name <name_of_env> --file requirements.txt
-        > conda activate <name_of_env>
-
-    If it gives a PackagesNotFoundError, use this command to search packages on more channels.
-
-        > conda config --append channels conda-forge
+        > python -m venv <name_of_env>
+        > pip install -r requirements.txt
+        > source exp_env/bin/activate
 
     Note: Do not include the '>' character when copying the command
 
-    After running these two lines you should be all good to try the example
+    After running these three lines you should be all good to try the example
     runs below!
 
 
@@ -84,3 +81,4 @@ EXAMPLE RUNS
     1. The code currently has bad error handling so paths must be set correctly.
     2. Currently the model skips last chunk of audio files if the size is less than 10 seconds.
     3. Add docstrings
+    4. Save csv with filename and number of calls detected for each category.
