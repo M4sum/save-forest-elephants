@@ -1,7 +1,0 @@
-README.md
-setup.py
-ElephantCallsAI_Peter_Scripts.egg-info/PKG-INFO
-ElephantCallsAI_Peter_Scripts.egg-info/SOURCES.txt
-ElephantCallsAI_Peter_Scripts.egg-info/dependency_links.txt
-ElephantCallsAI_Peter_Scripts.egg-info/requires.txt
-ElephantCallsAI_Peter_Scripts.egg-info/top_level.txt
