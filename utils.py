@@ -7,12 +7,20 @@ import os
 
 
 def get_file_paths(dir_path):
-    paths = []
-    for f in os.listdir(dir_path):
-        if os.path.isfile(os.path.join(dir_path, f)) and f.split('.')[-1] != "DS_Store":
-            file_id = f.split(".")[0]
-            paths.append((file_id, os.path.join(dir_path,f)))
-    return paths
+    """
+    Takes a directory path, walks recurrsively and returns path of all audio files with its id.
+    Args:
+        dir_path (str) - path of the directory where audi files are stored.
+    Returns:
+        files (list) - List of tuples i.e. (file_id, file_path)
+    """
+    # Check if the directory exists
+    if os.path.exists(dir_path):
+        # Walk recurrsively through the directory and get paths and ids
+        files = [(file.split(".")[0],os.path.join(root, file)) for root, dirs, files in os.walk(dir_path) for file in files if os.path.split(file)[-1].split(".")[-1] == "wav"]
+    else:
+        print(f"The directory '{dir_path}' does not exist.")
+    return files
 
 def format_paths(spect_dir_path, spect_out_path, model_0_path, model_1_path, result_dir_path, spect_path_path):
     relevant_paths = [spect_dir_path, spect_out_path, model_0_path, model_1_path, result_dir_path, spect_path_path]

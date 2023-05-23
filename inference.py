@@ -12,6 +12,7 @@ import math
 from multiprocessing import Pool, cpu_count
 import numpy as np
 import os
+import pdb
 import parameters
 from scipy.ndimage import gaussian_filter1d
 from sklearn.metrics import f1_score
@@ -810,7 +811,7 @@ if __name__ == '__main__':
         os.mkdir(args.call_predictions_path)
 
     full_test_spect_paths = get_file_paths(args.data_path)
-
+    pdb.set_trace()
     # Include flag indicating if we are just making predictions with no labels
     full_dataset = ElephantDatasetFull(full_test_spect_paths)
    
@@ -884,23 +885,12 @@ if __name__ == '__main__':
             # Average the predictions on overlapping frames
             rumble_predictions = rumble_predictions / overlap_counts
             gunshot_predictions = gunshot_predictions / overlap_counts
-
-            # Get squashed [0, 1] predictions
-            # rumble_predictions = sigmoid(rumble_predictions)
-            # gunshot_predictions = sigmoid(gunshot_predictions)
             
             save_predictions(model_id, f'{file_id}_rumble', rumble_predictions, args.predictions_path)
             save_predictions(model_id, f'{file_id}_gunshot', gunshot_predictions, args.predictions_path)
             
             end = time.time()
             print("total time taken to get and save predictions: ", end - start)
-
-    # if args.make_full_preds:
-    #     generate_predictions_full_spectrograms(full_dataset, model_0, model_id, args.predictions_path,
-    #         sliding_window=True, chunk_size=parameters.CHUNK_SIZE, jump=parameters.PREDICTION_SLIDE_LENGTH, 
-    #         hierarchical_model=model_1, hierarchy_threshold=parameters.FALSE_POSITIVE_THRESHOLD)
-
-
 
     elif args.full_stats:
         # Now we have to decide what to do with these stats

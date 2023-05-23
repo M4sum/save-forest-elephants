@@ -613,15 +613,9 @@ class SpectrogramDataset(Dataset):
         slice = slice.to(parameters.device)
         return slice, index, self.file_idx
 
-
-"""
-    Dataset for full test length audio
-    NEED TO FIX THIS!!
-"""
 class ElephantDatasetFull(data.Dataset):
     def __init__(self, audio_files, preprocess="norm", 
                     scale=True):
-
         self.files = audio_files        
 
     def __len__(self):
@@ -630,5 +624,4 @@ class ElephantDatasetFull(data.Dataset):
     def __getitem__(self, index):
         file_id, audio_path = self.files[index]
         _, audio = wavfile.read(audio_path)
-
         return audio, file_id
