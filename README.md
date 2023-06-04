@@ -1,4 +1,10 @@
+
+
+
 README
+    
+    IMPORTANT NOTE: This is still a work in progress. the current best working solution is published under the branch 'integration_new_model'. To replicate the solution, you need to follow the readme present under that branch.
+    
     This is the README for the 'Inference_pipeline.py' script used for processing data and running 
     the 2-stage model for elephant call prediction. 
 
