@@ -811,7 +811,6 @@ if __name__ == '__main__':
         os.mkdir(args.call_predictions_path)
 
     full_test_spect_paths = get_file_paths(args.data_path)
-    pdb.set_trace()
     # Include flag indicating if we are just making predictions with no labels
     full_dataset = ElephantDatasetFull(full_test_spect_paths)
    
